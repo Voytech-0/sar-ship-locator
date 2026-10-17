@@ -9,18 +9,25 @@ WORKDIR /app
 
 # Dependencies first so this layer is cached until the lock file changes.
 COPY pyproject.toml uv.lock .python-version ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project --extra land
 
 COPY src ./src
 COPY contracts ./contracts
+COPY alembic.ini ./alembic.ini
+COPY migrations ./migrations
 # Non-editable: only /app/.venv is copied to the final image, so the package must live inside it.
-RUN uv sync --frozen --no-dev --no-editable
+RUN uv sync --frozen --no-dev --no-editable --extra land
 
 
 FROM python:3.12-slim
 RUN useradd --system --uid 10001 --no-create-home app
 WORKDIR /app
 COPY --from=build /app/.venv /app/.venv
+COPY --from=build /app/contracts /app/contracts
+COPY --from=build /app/alembic.ini /app/alembic.ini
+COPY --from=build /app/migrations /app/migrations
+# Writable data directory (land polygons); a named volume mounted here inherits this ownership
+RUN mkdir -p /app/data && chown app /app/data
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1
 USER app
 EXPOSE 8000

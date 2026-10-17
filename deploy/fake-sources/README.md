@@ -8,7 +8,7 @@ A tiny stand-in for the two external HTTP sources, serving the fixtures in `test
 | `GET /aisdk-2026-10-14.zip` | DMA daily AIS archive | zip containing `aisdk-2026-10-14.csv`; any other day answers 404 like the real bucket does inside its publication lag |
 | `GET /healthz` | n/a | `{"status": "ok"}` |
 
-Not served here: ranged GETs of the Scene TIFF. Use an S3-compatible store seeded from `tests/fixtures/s3/` (MinIO in compose, moto in unit tests); see `tests/fixtures/README.md`.
+Not served here: ranged GETs of the Scene TIFF. Use an S3-compatible store seeded from `tests/fixtures/s3/` (SeaweedFS in compose, moto in unit tests); see `tests/fixtures/README.md`.
 
 ## Run
 

@@ -33,7 +33,7 @@ def _promtool(*args: str) -> subprocess.CompletedProcess[str]:
 def test_scrape_config_targets_pipeline_api() -> None:
     cfg = yaml.safe_load((PROM_DIR / "prometheus.yml").read_text())
     [job] = cfg["scrape_configs"]
-    assert job["metrics_path"] == "/metrics"
+    assert job["metrics_path"] == "/v1/metrics"
     assert job["static_configs"][0]["targets"] == ["pipeline-api:8000"]
     assert cfg["rule_files"] == ["/etc/prometheus/alerts.yml"]
 

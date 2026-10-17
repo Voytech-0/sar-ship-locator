@@ -1,6 +1,6 @@
 # Object storage layout
 
-One MinIO bucket, `sar`. All keys are relative to it. Writers overwrite deterministically, so re-running a stage is safe.
+One bucket in the S3-compatible object store, `sar`. All keys are relative to it. Writers overwrite deterministically, so re-running a stage is safe.
 
 | Key | Written by | Content |
 |---|---|---|

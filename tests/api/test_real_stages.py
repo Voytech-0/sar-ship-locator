@@ -20,7 +20,7 @@ from moto import mock_aws
 from shapely.geometry import box
 
 from contracts.protocols import AisPosition, Region, SceneRef
-from pipeline.adapters import MinioObjectStore, Sentinel1S3Fetcher
+from pipeline.adapters import S3ObjectStore, Sentinel1S3Fetcher
 from pipeline.algorithms import CaCfarDetector, NearestNeighbourValidator, PolygonLandMask
 from pipeline.algorithms.ais_dma import iter_dma_positions
 from pipeline.stages.real import Services, make_registry
@@ -64,7 +64,7 @@ def s3() -> Iterator[Any]:
 
 
 @pytest.fixture
-def pipeline(s3: Any, make_api: Callable[..., Api]) -> tuple[Api, MinioObjectStore, dict[str, Any]]:
+def pipeline(s3: Any, make_api: Callable[..., Api]) -> tuple[Api, S3ObjectStore, dict[str, Any]]:
     fetcher = Sentinel1S3Fetcher(s3)
     region = Region(
         "great-belt",
@@ -81,7 +81,7 @@ def pipeline(s3: Any, make_api: Callable[..., Api]) -> tuple[Api, MinioObjectSto
     )
     island = box(lon[0] - 0.004, lat[0] - 0.003, lon[0] + 0.004, lat[0] + 0.003)
 
-    store = MinioObjectStore(s3, bucket="sar")
+    store = S3ObjectStore(s3, bucket="sar")
     services = Services(
         catalogue=FakeCatalogue(),
         fetcher=Sentinel1S3Fetcher(s3),
@@ -96,7 +96,7 @@ def pipeline(s3: Any, make_api: Callable[..., Api]) -> tuple[Api, MinioObjectSto
 
 
 def test_fixture_scene_through_all_five_stages(
-    pipeline: tuple[Api, MinioObjectStore, dict[str, Any]],
+    pipeline: tuple[Api, S3ObjectStore, dict[str, Any]],
 ) -> None:
     api, store, probe = pipeline
 

@@ -10,7 +10,7 @@ Contract first, then components in parallel against fakes, each gated by its own
 | `airflow-db` | Airflow metadata only | — |
 | `pipeline-api` | FastAPI. Runs the stages as async jobs; owns all geospatial dependencies and all business logic | `postgis` (SQL), `minio` (S3), CDSE and DMA (HTTPS, via adapters), Prometheus scrapes `/metrics` |
 | `postgis` | Application database: Regions, Scenes, Detections, AIS Positions, Validations, Jobs | — |
-| `minio` | Object store: cropped Scene rasters, Chips, dataset exports | — |
+| `objectstore` | Object store: cropped Scene rasters, Chips, dataset exports | — |
 | `prometheus` | Scrapes pipeline metrics | `pipeline-api` |
 | `grafana` | Dashboards provisioned from code | `prometheus`, `postgis` (read-only user) |
 | `fake-sources` (dev/CI only) | Stands in for CDSE catalogue + S3 and the DMA bucket, serves fixtures | — |
@@ -21,7 +21,7 @@ Not containers: the Detector, Validator and adapters are Python modules inside `
 
 1. **`openapi.yaml`**: hand-written HTTP API (below). `pipeline-api` must conform; Airflow DAG tests are built from it.
 2. **`schema.sql` + Alembic migration `0001`**: tables, enums (scene status, match label), spatial indexes.
-3. **`storage.md`**: MinIO key layout (`scenes/{scene_id}/vv.tif`, `chips/{detection_id}.png`, `datasets/{version}/manifest.json`).
+3. **`storage.md`**: object store key layout (`scenes/{scene_id}/vv.tif`, `chips/{detection_id}.png`, `datasets/{version}/manifest.json`).
 4. **`protocols.py`**: `CatalogueClient`, `SceneFetcher`, `AisSource`, `Detector`, `Validator`, `ObjectStore`, plus the value types they exchange.
 5. **`metrics.md`**: metric names and labels.
 6. **`config.schema.json`** and example `region.greatbelt.yaml`: Region polygon, CFAR parameters, match gate.
@@ -58,7 +58,7 @@ Scene status machine: `discovered → fetched → detected → validated`, or `f
 | B. Fixtures | `fake-sources`, small real Scene crop, small AIS slice | fixtures load; fake endpoints match the real response shapes |
 | C. Algorithms | CFAR `Detector`, land mask, `Validator`, AIS file parser | unit tests on synthetic rasters (injected ships, known tracks) plus one real fixture |
 | D. API skeleton | `pipeline-api` job framework, endpoints with stubbed stages | schemathesis run against `openapi.yaml`; idempotency and failure-state tests |
-| E. Adapters | CDSE client, DMA client, MinIO `ObjectStore`, **GRD partial-read spike done (ADR-0004); next: strip-offset parsing, calibration, retries** | adapter tests against `fake-sources`; spike result written up (ADR if it changes the design) |
+| E. Adapters | CDSE client, DMA client, S3 `ObjectStore`, **GRD partial-read spike done (ADR-0004); next: strip-offset parsing, calibration, retries** | adapter tests against `fake-sources`; spike result written up (ADR if it changes the design) |
 | F. DAGs | the three DAGs | DAG import test; DAG runs against a stub of the API built from `openapi.yaml` |
 | G. Observability | `/metrics`, Prometheus config, Grafana dashboards | `promtool check`; dashboard JSON lint; metric names match `metrics.md` |
 

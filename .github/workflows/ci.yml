@@ -23,3 +23,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: make check-schema
+
+  dags:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dags
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run mypy
+      - run: uv run pytest -q
+
+  compose:
+    runs-on: ubuntu-latest
+    env:
+      CDSE_S3_ACCESS_KEY: ci
+      CDSE_S3_SECRET_KEY: ci
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/init_env.sh
+      - run: docker compose config -q
+      - run: docker compose build

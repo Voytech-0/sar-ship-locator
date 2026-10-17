@@ -56,6 +56,20 @@ class FetchDiagnostics:
     seconds: float
 
 
+class _Tally:
+    """Bytes and requests of ONE fetch call. Per call, because the API runs several fetches on one fetcher."""
+
+    def __init__(self) -> None:
+        self.bytes = 0
+        self.requests = 0
+        self._lock = threading.Lock()
+
+    def add(self, nbytes: int, requests: int = 1) -> None:
+        with self._lock:
+            self.bytes += nbytes
+            self.requests += requests
+
+
 @dataclass(frozen=True)
 class _Layout:
     height: int
@@ -107,15 +121,12 @@ class Sentinel1S3Fetcher:
         self._header_block = header_block
         self._max_workers = max_workers
         self.last_diagnostics: FetchDiagnostics | None = None
-        self._lock = threading.Lock()
-        self._bytes = 0
-        self._requests = 0
 
     # ------------------------------------------------------------------ public
 
     def fetch(self, scene: SceneRef, region: Region) -> SceneRaster:
         t0 = time.monotonic()
-        self._bytes = self._requests = 0
+        tally = _Tally()
         region_poly = ring_to_polygon(region.polygon)
         if not Polygon(scene.footprint).intersects(region_poly):
             raise PermanentError(f"{scene.scene_id} does not intersect Region {region.region_id}")
@@ -135,7 +146,7 @@ class Sentinel1S3Fetcher:
             layout, grid = self._read_header(reader)
         except (tifffile.TiffFileError, ValueError, struct.error, EOFError, KeyError, IndexError) as exc:
             raise PermanentError(f"{tiff_key}: unreadable TIFF header: {exc!r}") from exc
-        self._count(reader.bytes_read, reader.requests)
+        tally.add(reader.bytes_read, reader.requests)
 
         window = grid.region_window(region_poly, layout.height, layout.width)
         if window is None:
@@ -145,14 +156,14 @@ class Sentinel1S3Fetcher:
         r0, r1, c0, c1 = window
 
         if layout.fast:
-            dn = self._read_rows(tiff_key, layout, r0, r1, c0, c1)
+            dn = self._read_rows(tiff_key, layout, r0, r1, c0, c1, tally)
             mode: Literal["row-range", "full-band"] = "row-range"
         else:
             log.warning("%s: layout is not row-striped/uncompressed, downloading the full VV band", tiff_key)
-            dn = self._read_full_band(tiff_key, reader.size, r0, r1, c0, c1)
+            dn = self._read_full_band(tiff_key, reader.size, r0, r1, c0, c1, tally)
             mode = "full-band"
 
-        cal = CalibrationLut.from_xml(self._get_object(cal_key))
+        cal = CalibrationLut.from_xml(self._get_object(cal_key, tally))
         sigma0 = cal.sigma0(dn, r0, c0)
         del dn
         sigma0[~grid.region_mask(region_poly, window)] = np.nan
@@ -168,8 +179,8 @@ class Sentinel1S3Fetcher:
             )
         self.last_diagnostics = FetchDiagnostics(
             mode=mode,
-            bytes_downloaded=self._bytes,
-            requests=self._requests,
+            bytes_downloaded=tally.bytes,
+            requests=tally.requests,
             window=window,
             affine_max_error_px=fit.max_error_px,
             affine_mean_error_px=fit.mean_error_px,
@@ -187,16 +198,16 @@ class Sentinel1S3Fetcher:
 
         return SceneRaster(
             scene_id=scene.scene_id,
-            acquired_at=self._window_time(scene, prefix, (r0 + r1) / 2),
+            acquired_at=self._window_time(scene, prefix, (r0 + r1) / 2, tally),
             sigma0_vv=sigma0,
             transform=fit.transform,
             geolocate=geolocate,
-            bytes_downloaded=self._bytes,
+            bytes_downloaded=tally.bytes,
         )
 
     # ----------------------------------------------------------------- helpers
 
-    def _window_time(self, scene: SceneRef, prefix: str, centre_row: float) -> Any:
+    def _window_time(self, scene: SceneRef, prefix: str, centre_row: float, tally: _Tally) -> Any:
         """Acquisition time of the window's centre row: catalogue start plus rows * azimuth time interval.
 
         The catalogue time is the start of a ~25 s acquisition, so using it directly would misplace ships
@@ -209,18 +220,13 @@ class Sentinel1S3Fetcher:
                 lambda n: n.startswith("s1") and "-vv-" in n and n.endswith(".xml"),
                 "VV annotation",
             )
-            node = ET.fromstring(self._get_object(key)).find(".//azimuthTimeInterval")
+            node = ET.fromstring(self._get_object(key, tally)).find(".//azimuthTimeInterval")
             if node is None or not node.text:
                 raise ValueError("no azimuthTimeInterval")
             return scene.acquired_at + timedelta(seconds=centre_row * float(node.text))
         except (PermanentError, ValueError, ET.ParseError) as exc:
             log.warning("%s: using the catalogue acquisition time (%s)", scene.scene_id, exc)
             return scene.acquired_at
-
-    def _count(self, nbytes: int, requests: int) -> None:
-        with self._lock:
-            self._bytes += nbytes
-            self._requests += requests
 
     @staticmethod
     def _product_prefix(scene: SceneRef) -> str:
@@ -261,7 +267,7 @@ class Sentinel1S3Fetcher:
             raise PermanentError(f"{prefix}: {len(hits)} candidates for {what}: {hits}")
         return hits[0]
 
-    def _get_object(self, key: str) -> bytes:
+    def _get_object(self, key: str, tally: _Tally) -> bytes:
         def once() -> bytes:
             try:
                 data: bytes = self._client.get_object(Bucket=self._bucket, Key=key)["Body"].read()
@@ -271,7 +277,7 @@ class Sentinel1S3Fetcher:
             return data
 
         data = self._retry.call(once, is_retryable, f"S3 GET {key}")
-        self._count(len(data), 1)
+        tally.add(len(data))
         return data
 
     def _read_header(self, reader: S3RangeReader) -> tuple[_Layout, GcpGrid]:
@@ -301,7 +307,9 @@ class Sentinel1S3Fetcher:
             layout = _Layout(height, width, raw_dtype, offsets, counts, fast)
         return layout, GcpGrid(np.asarray(tiepoints, dtype=np.float64))
 
-    def _read_rows(self, key: str, lay: _Layout, r0: int, r1: int, c0: int, c1: int) -> NDArray[np.uint16]:
+    def _read_rows(
+        self, key: str, lay: _Layout, r0: int, r1: int, c0: int, c1: int, tally: _Tally
+    ) -> NDArray[np.uint16]:
         row_bytes = lay.width * lay.dtype.itemsize
         step = max(1, self._chunk_bytes // row_bytes)
         spans = [(a, min(a + step, r1)) for a in range(r0, r1, step)]
@@ -311,7 +319,7 @@ class Sentinel1S3Fetcher:
             start = lay.offsets[a]
             end = lay.offsets[b - 1] + lay.counts[b - 1] - 1
             data = ranged_get(self._client, self._bucket, key, start, end, self._retry)
-            self._count(len(data), 1)
+            tally.add(len(data))
             rows = np.frombuffer(data, dtype=lay.dtype).reshape(b - a, lay.width)
             return np.array(rows[:, c0:c1], dtype=np.uint16)
 
@@ -319,14 +327,16 @@ class Sentinel1S3Fetcher:
             parts = list(pool.map(read, spans))
         return np.vstack(parts)
 
-    def _read_full_band(self, key: str, size: int, r0: int, r1: int, c0: int, c1: int) -> NDArray[np.uint16]:
+    def _read_full_band(
+        self, key: str, size: int, r0: int, r1: int, c0: int, c1: int, tally: _Tally
+    ) -> NDArray[np.uint16]:
         with tempfile.TemporaryDirectory(prefix="s1band-") as tmp:
             path = Path(tmp) / "vv.tiff"
             with path.open("wb") as fh:
                 for start in range(0, size, self._chunk_bytes):
                     end = min(start + self._chunk_bytes, size) - 1
                     data = ranged_get(self._client, self._bucket, key, start, end, self._retry)
-                    self._count(len(data), 1)
+                    tally.add(len(data))
                     fh.write(data)
             try:
                 with tifffile.TiffFile(path) as tif:

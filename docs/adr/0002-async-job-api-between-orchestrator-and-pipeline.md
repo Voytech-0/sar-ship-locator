@@ -2,7 +2,7 @@
 
 Status: accepted
 
-Airflow does not run pipeline code. Each stage (`discover`, `fetch`, `detect`, `validate`, `ais-load`) is an endpoint of a FastAPI service in its own container with the geospatial dependencies (GDAL, rasterio). Airflow submits a job with `POST /jobs`, then polls `GET /jobs/{id}` until it finishes. Jobs are idempotent per Scene id, and large data moves through MinIO and Postgres, not through request payloads.
+Airflow does not run pipeline code. Each stage (`discover`, `fetch`, `detect`, `validate`, `ais-load`) is an endpoint of a FastAPI service in its own container with the geospatial dependencies (GDAL, rasterio). Airflow submits a job with `POST /jobs`, then polls `GET /jobs/{id}` until it finishes. Jobs are idempotent per Scene id, and large data moves through the object store and Postgres, not through request payloads.
 
 ## Considered Options
 

@@ -9,8 +9,8 @@ Endpoints
                            as the real bucket does inside its publication lag
   GET /healthz
 
-Ranged GETs of the scene TIFF are NOT served here: seed an S3-compatible store (MinIO in compose, moto in unit
-tests) from `tests/fixtures/s3/` instead. See README.md.
+Ranged GETs of the scene TIFF are NOT served here: seed an S3-compatible store (SeaweedFS in compose,
+moto in unit tests) from `tests/fixtures/s3/` instead. See README.md.
 """
 
 from __future__ import annotations

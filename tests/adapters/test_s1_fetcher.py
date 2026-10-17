@@ -83,6 +83,19 @@ def test_raster_carries_gcp_geolocation_and_bytes_downloaded(
     assert raster.bytes_downloaded == diag.bytes_downloaded > 0
 
 
+def test_concurrent_fetches_report_their_own_byte_counts(
+    s3: Any, product: bytes, fast_retry: RetryPolicy
+) -> None:
+    """The API runs several fetches on one fetcher; a shared counter would be reset by each new call."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    f = fetcher(s3, fast_retry)
+    alone = f.fetch(scene(), region()).bytes_downloaded
+    with ThreadPoolExecutor(8) as pool:
+        counts = list(pool.map(lambda _: f.fetch(scene(), region()).bytes_downloaded, range(16)))
+    assert counts == [alone] * 16
+
+
 def test_only_needed_rows_are_downloaded(s3: Any, product: bytes, fast_retry: RetryPolicy) -> None:
     client = FlakyClient(s3)
     f = fetcher(client, fast_retry, chunk_bytes=60_000)

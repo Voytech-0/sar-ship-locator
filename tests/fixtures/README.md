@@ -47,7 +47,7 @@ Format notes: `Timestamp` is `dd/mm/YYYY HH:MM:SS` in UTC; `Latitude`/`Longitude
 `deploy/fake-sources` serves the OData catalogue and the DMA zip (see its README). Ranged GETs of the TIFF are served by an S3-compatible store seeded from `s3/`:
 
 - unit tests: `moto` (`mock_aws`), `create_bucket("eodata")`, upload every file under `s3/eodata/` with its relative path as the key
-- compose: MinIO with a one-shot `mc mirror tests/fixtures/s3/ local/` job creates and fills bucket `eodata`
+- compose: seed an S3-compatible store (SeaweedFS) with `tests/fixtures/s3/` into bucket `eodata`
 
 ## Regenerating
 

@@ -1,7 +1,7 @@
 """Build the production `Services` from environment variables.
 
 CDSE_S3_ACCESS_KEY / CDSE_S3_SECRET_KEY   Copernicus S3 keys (the account login is not needed)
-MINIO_ENDPOINT_URL, MINIO_ROOT_USER, MINIO_ROOT_PASSWORD, MINIO_BUCKET (default sar)
+STORE_ENDPOINT_URL, STORE_ACCESS_KEY, STORE_SECRET_KEY, STORE_BUCKET (default sar)
 PIPELINE_LAND_POLYGONS                     GeoJSON of land polygons covering the Regions
 """
 
@@ -15,10 +15,10 @@ from contracts.protocols import LandMask
 from pipeline.adapters import (
     CdseCatalogue,
     DmaAisSource,
-    MinioObjectStore,
+    S3ObjectStore,
     Sentinel1S3Fetcher,
-    create_minio_client,
     create_s3_client,
+    create_store_client,
 )
 from pipeline.algorithms import CaCfarDetector, NearestNeighbourValidator, PolygonLandMask
 from pipeline.stages.real import Services
@@ -32,11 +32,11 @@ def _need(env: Mapping[str, str], name: str) -> str:
 
 def build_services(env: Mapping[str, str] | None = None) -> Services:
     e = os.environ if env is None else env
-    store = MinioObjectStore(
-        create_minio_client(
-            _need(e, "MINIO_ENDPOINT_URL"), _need(e, "MINIO_ROOT_USER"), _need(e, "MINIO_ROOT_PASSWORD")
+    store = S3ObjectStore(
+        create_store_client(
+            _need(e, "STORE_ENDPOINT_URL"), _need(e, "STORE_ACCESS_KEY"), _need(e, "STORE_SECRET_KEY")
         ),
-        bucket=e.get("MINIO_BUCKET", "sar"),
+        bucket=e.get("STORE_BUCKET", "sar"),
     )
     store.ensure_bucket()
     polygons = _need(e, "PIPELINE_LAND_POLYGONS")

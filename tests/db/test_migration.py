@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import psycopg
+import pytest
 from alembic import command
 
 from .conftest import ROOT, Server, alembic_config
@@ -108,7 +109,7 @@ def test_upgrade_head_twice_is_a_noop(server: Server, empty_db: str) -> None:
     command.upgrade(cfg, "head")
     command.upgrade(cfg, "head")
     with psycopg.connect(server.dsn(empty_db)) as conn:
-        assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [("0001",)]
+        assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [("0002",)]
 
 
 def test_downgrade_keeps_role_while_another_database_uses_it(server: Server, empty_db: str) -> None:
@@ -134,3 +135,28 @@ def test_revision_file_applies_the_contract_path() -> None:
     spec.loader.exec_module(module)
     assert Path(module.SCHEMA_SQL) == ROOT / "contracts" / "schema.sql"
     assert module.SCHEMA_SQL.is_file()
+
+
+def test_grafana_login_role_is_read_only_and_follows_the_password(
+    server: Server, empty_db: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from psycopg.conninfo import make_conninfo
+
+    cfg = alembic_config(server.url(empty_db))
+    monkeypatch.setenv("GRAFANA_DB_PASSWORD", "first pw with 'quotes'")
+    command.upgrade(cfg, "head")
+    try:
+        dsn = make_conninfo(server.dsn(empty_db), user="grafana", password="first pw with 'quotes'")
+        with psycopg.connect(dsn) as conn:
+            assert conn.execute("SELECT count(*) FROM scenes").fetchone() == (0,)
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                conn.execute("DELETE FROM scenes")
+
+        # a later run with a new password rotates it (the role already exists)
+        command.downgrade(cfg, "0001")
+        monkeypatch.setenv("GRAFANA_DB_PASSWORD", "second")
+        command.upgrade(cfg, "head")
+        with psycopg.connect(make_conninfo(server.dsn(empty_db), user="grafana", password="second")) as conn:
+            assert conn.execute("SELECT 1").fetchone() == (1,)
+    finally:
+        command.downgrade(cfg, "base")

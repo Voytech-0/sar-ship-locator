@@ -1,0 +1,137 @@
+# The whole system: docker compose up -d --build
+#
+# First time: scripts/init_env.sh creates .env with generated secrets (you add the Copernicus S3 keys).
+# The first start downloads the OSM land polygons (~0.9 GB) once; later starts reuse the volume.
+#
+# Ports: pipeline-api 8000, Airflow 8080, Grafana 3000, Prometheus 9090.
+
+name: sar
+
+include:
+  - path: deploy/airflow/compose.yaml # Airflow: api-server, scheduler, dag-processor, triggerer, own Postgres
+
+x-pipeline: &pipeline
+  build:
+    context: .
+    dockerfile: deploy/pipeline-api/Dockerfile
+  image: sar-pipeline:dev
+  environment: &pipeline-env
+    PIPELINE_DATABASE_URL: postgresql://sar:${POSTGRES_PASSWORD:?run scripts/init_env.sh}@postgis:5432/sar
+    PIPELINE_LAND_POLYGONS: /app/data/land/great-belt.geojson
+    STORE_ENDPOINT_URL: http://objectstore:8333
+    STORE_ACCESS_KEY: ${STORE_ACCESS_KEY:?run scripts/init_env.sh}
+    STORE_SECRET_KEY: ${STORE_SECRET_KEY:?run scripts/init_env.sh}
+    CDSE_S3_ACCESS_KEY: ${CDSE_S3_ACCESS_KEY:?add the Copernicus S3 keys to .env}
+    CDSE_S3_SECRET_KEY: ${CDSE_S3_SECRET_KEY:?add the Copernicus S3 keys to .env}
+
+services:
+  postgis:
+    build: deploy/postgis
+    image: sar-postgis:16
+    environment:
+      POSTGRES_DB: sar
+      POSTGRES_USER: sar
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run scripts/init_env.sh}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sar -d sar"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # One-shot: applies the schema (Alembic) and the Grafana login role.
+  migrate:
+    <<: *pipeline
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://sar:${POSTGRES_PASSWORD:?run scripts/init_env.sh}@postgis:5432/sar
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?run scripts/init_env.sh}
+    depends_on:
+      postgis:
+        condition: service_healthy
+    restart: "no"
+
+  # S3-compatible object store (SeaweedFS: MinIO no longer publishes public images). The pipeline only uses
+  # plain S3 calls, so it can be swapped for any S3 endpoint through STORE_ENDPOINT_URL.
+  objectstore:
+    image: chrislusf/seaweedfs:latest
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat > /tmp/s3.json <<EOF
+        {"identities":[{"name":"sar","credentials":[{"accessKey":"$$STORE_ACCESS_KEY","secretKey":"$$STORE_SECRET_KEY"}],"actions":["Admin","Read","Write","List","Tagging"]}]}
+        EOF
+        exec weed server -dir=/data -s3 -s3.config=/tmp/s3.json -ip=objectstore
+    environment:
+      STORE_ACCESS_KEY: ${STORE_ACCESS_KEY:?run scripts/init_env.sh}
+      STORE_SECRET_KEY: ${STORE_SECRET_KEY:?run scripts/init_env.sh}
+    volumes:
+      - store-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://objectstore:8333/"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # One-shot: builds the land polygon file once (skipped when the volume already has it).
+  land-init:
+    <<: *pipeline
+    command:
+      - sh
+      - -c
+      - >
+        test -s /app/data/land/great-belt.geojson ||
+        python -m pipeline.landpolygons --region /app/contracts/region.greatbelt.yaml
+        --out /app/data/land/great-belt.geojson --cache-dir /app/data/cache
+    volumes:
+      - land-data:/app/data
+    restart: "no"
+
+  pipeline-api:
+    <<: *pipeline
+    ports:
+      - "8000:8000"
+    volumes:
+      - land-data:/app/data:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      land-init:
+        condition: service_completed_successfully
+      objectstore:
+        condition: service_healthy
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    volumes:
+      - ./deploy/prometheus:/etc/prometheus:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - pipeline-api
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?run scripts/init_env.sh}
+      GF_AUTH_ANONYMOUS_ENABLED: "true" # local portfolio stack: read-only dashboards without a login
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      prometheus:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  pg-data:
+  store-data:
+  land-data:

@@ -4,5 +4,7 @@
 !.python-version
 !src/**
 !contracts/**
+!alembic.ini
+!migrations/**
 **/__pycache__
 **/*.pyc

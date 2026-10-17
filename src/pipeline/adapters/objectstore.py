@@ -1,4 +1,4 @@
-"""ObjectStore backed by MinIO (any S3-compatible endpoint)."""
+"""ObjectStore backed by any S3-compatible endpoint (SeaweedFS in compose, moto in tests)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from ._s3 import is_retryable, raise_if_permanent
 _MISSING = {"NoSuchKey", "404", "NotFound"}
 
 
-def create_minio_client(endpoint_url: str, access_key: str, secret_key: str) -> Any:
+def create_store_client(endpoint_url: str, access_key: str, secret_key: str) -> Any:
     import boto3
     from botocore.config import Config
 
@@ -26,7 +26,7 @@ def create_minio_client(endpoint_url: str, access_key: str, secret_key: str) -> 
     )
 
 
-class MinioObjectStore:
+class S3ObjectStore:
     """Keys are relative to one bucket (default `sar`, see contracts/storage.md).
 
     `get` raises `FileNotFoundError` for a missing key; `delete` of a missing key is a no-op.
