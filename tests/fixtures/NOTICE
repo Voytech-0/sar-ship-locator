@@ -1,0 +1,7 @@
+Data attribution
+
+Contains modified Copernicus Sentinel data 2026, processed by ESA (Sentinel-1D IW GRD, scene S1D_IW_GRDH_1SDV_20261014T053204_20261014T053229_005007_009759_0CC6). Cropped, rewritten into a mini-scene and its annotation trimmed and resampled for testing. Sentinel data is provided free of charge under the Copernicus Sentinel Data Terms and Conditions (https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice).
+
+AIS data: Danish Maritime Authority, AIS data for 2026-10-14, published under the Danish PSI Act (act no. 596 of ongoing use of public sector information). Filtered by time and area; rows are otherwise unmodified.
+
+The files under tests/fixtures/ are test data only and are not covered by the licence of this repository's source code.

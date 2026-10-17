@@ -1,0 +1,11 @@
+{
+  "_note": "Ground truth for the fixture scene, found by hand-checking bright blobs against the DMA AIS slice. Pixel coordinates are in the fixture TIFF (row, col). distance_m is the distance between the blob (geolocated via the GCPs, time taken from its row) and the AIS track linearly interpolated to that time. Labels are weak: they say 'matched an AIS track', not 'is a ship'.",
+  "ships": [
+    {"row": 1433, "col": 817, "mmsi": 477909800, "distance_m": 120, "sog_knots": 12.3, "ais_length_m": 264},
+    {"row": 90, "col": 1399, "mmsi": 577756000, "distance_m": 118, "sog_knots": 8.7, "ais_length_m": 194},
+    {"row": 901, "col": 1005, "mmsi": 255806351, "distance_m": 227, "sog_knots": 13.3, "ais_length_m": 150}
+  ],
+  "known_false_alarms": [
+    {"row": 1165, "col": 195, "note": "bright spot on the island: a plain threshold DOES pick it up, only a land mask removes it. An AIS station (MMSI 219026516, SOG 0.1) sits 34 m away, so it is not an open-water ship"}
+  ]
+}
