@@ -176,6 +176,104 @@
           }
         ]
       }
+    },
+    {
+      "id": 5,
+      "title": "Dark-ship candidates (unmatched, open water, 100 m or longer, confidence 0.9 or more)",
+      "type": "geomap",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgis"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 12
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgis"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT c.lat AS latitude, c.lon AS longitude, c.confidence, c.length_m, c.scene_id, c.acquired_at\nFROM dark_ship_candidates c\nWHERE $__timeFilter(c.acquired_at)\nORDER BY c.acquired_at DESC\nLIMIT 500"
+        }
+      ],
+      "options": {
+        "view": {
+          "id": "coords",
+          "lat": 55.35,
+          "lon": 11.0,
+          "zoom": 8
+        },
+        "basemap": {
+          "type": "default"
+        },
+        "layers": [
+          {
+            "type": "markers",
+            "name": "Dark-ship candidates",
+            "config": {
+              "style": {
+                "size": {
+                  "fixed": 9
+                },
+                "color": {
+                  "fixed": "red"
+                },
+                "opacity": 0.9
+              }
+            },
+            "location": {
+              "mode": "coords",
+              "latitude": "latitude",
+              "longitude": "longitude"
+            },
+            "tooltip": true
+          }
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "title": "Dark-ship candidates: detail",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgis"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 12
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgis"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT c.lat AS latitude, c.lon AS longitude, c.confidence, c.length_m, c.scene_id, c.acquired_at\nFROM dark_ship_candidates c\nWHERE $__timeFilter(c.acquired_at)\nORDER BY c.acquired_at DESC\nLIMIT 500"
+        }
+      ]
     }
   ]
 }

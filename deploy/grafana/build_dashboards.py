@@ -238,6 +238,26 @@ GEOMAP_OPTIONS = {
 }
 
 
+# Unmatched, confident, ship-sized open-water Detections (view in contracts/schema.sql). Candidates only.
+DARK_SHIP_CANDIDATES = """\
+SELECT c.lat AS latitude, c.lon AS longitude, c.confidence, c.length_m, c.scene_id, c.acquired_at
+FROM dark_ship_candidates c
+WHERE $__timeFilter(c.acquired_at)
+ORDER BY c.acquired_at DESC
+LIMIT 500"""
+
+DARK_GEOMAP_OPTIONS = {
+    **GEOMAP_OPTIONS,
+    "layers": [
+        {
+            **GEOMAP_OPTIONS["layers"][0],
+            "name": "Dark-ship candidates",
+            "config": {"style": {"size": {"fixed": 9}, "color": {"fixed": "red"}, "opacity": 0.9}},
+        }
+    ],
+}
+
+
 def detections() -> dict[str, Any]:
     return dashboard(
         "sar-detections",
@@ -267,6 +287,23 @@ def detections() -> dict[str, Any]:
                 _grid(8, 8, 16, 14),
                 fmt="table",
                 options=GEOMAP_OPTIONS,
+            ),
+            sql_panel(
+                5,
+                "Dark-ship candidates (unmatched, open water, 100 m or longer, confidence 0.9 or more)",
+                "geomap",
+                DARK_SHIP_CANDIDATES,
+                _grid(0, 22, 12, 12),
+                fmt="table",
+                options=DARK_GEOMAP_OPTIONS,
+            ),
+            sql_panel(
+                6,
+                "Dark-ship candidates: detail",
+                "table",
+                DARK_SHIP_CANDIDATES,
+                _grid(12, 22, 12, 12),
+                fmt="table",
             ),
         ],
     )

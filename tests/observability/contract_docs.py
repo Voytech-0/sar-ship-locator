@@ -38,4 +38,26 @@ def schema_tables() -> dict[str, set[str]]:
                 continue
             columns.add(line.split()[0])
         tables[match.group(1)] = columns
+    for view in re.finditer(r"CREATE OR REPLACE VIEW (\w+) AS\s+SELECT (.*?)\bFROM\b", sql, re.S):
+        tables[view.group(1)] = {_select_name(item) for item in _split_top_level(view.group(2))}
     return tables
+
+
+def _split_top_level(select_list: str) -> list[str]:
+    """Split a SELECT list on commas that are not inside parentheses."""
+    items, depth, cur = [], 0, ""
+    for ch in select_list:
+        depth += ch == "("
+        depth -= ch == ")"
+        if ch == "," and depth == 0:
+            items.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    return [i.strip() for i in [*items, cur] if i.strip()]
+
+
+def _select_name(item: str) -> str:
+    """The output column name of one SELECT item: its alias, else the column after the last dot."""
+    alias = re.search(r"\bAS\s+(\w+)\s*$", item, re.I)
+    return alias.group(1) if alias else item.split(".")[-1].strip()

@@ -139,11 +139,13 @@ def test_sql_panels_only_read() -> None:
 
 
 def test_geomap_uses_lat_lon_columns_the_query_returns() -> None:
-    [geo] = [p for p in _panels(GRAFANA / "dashboards/detections.json") if p["type"] == "geomap"]
-    loc = geo["options"]["layers"][0]["location"]
-    sql = geo["targets"][0]["rawSql"]
-    assert f"AS {loc['latitude']}" in sql and f"AS {loc['longitude']}" in sql
-    assert geo["targets"][0]["format"] == "table"
+    geos = [p for p in _panels(GRAFANA / "dashboards/detections.json") if p["type"] == "geomap"]
+    assert len(geos) == 2  # all Detections, and the dark-ship candidates
+    for geo in geos:
+        loc = geo["options"]["layers"][0]["location"]
+        sql = geo["targets"][0]["rawSql"]
+        assert f"AS {loc['latitude']}" in sql and f"AS {loc['longitude']}" in sql
+        assert geo["targets"][0]["format"] == "table"
 
 
 def test_sql_time_panels_return_time_column_first() -> None:
