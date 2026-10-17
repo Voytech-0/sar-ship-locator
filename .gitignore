@@ -12,3 +12,5 @@ dist/
 # Local data (never commit rasters or AIS archives)
 data/
 !tests/fixtures/**
+# Agent worktrees
+.claude/

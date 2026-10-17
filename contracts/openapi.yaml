@@ -162,6 +162,7 @@ paths:
                     type: array
                     items: {$ref: '#/components/schemas/Scene'}
                   total: {type: integer, minimum: 0}
+        '422': {$ref: '#/components/responses/Invalid'}
 
   /scenes/{scene_id}:
     get:

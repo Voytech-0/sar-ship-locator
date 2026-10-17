@@ -19,6 +19,14 @@ if TYPE_CHECKING:
 LonLat = tuple[float, float]
 
 
+class Geolocator(Protocol):
+    """Maps pixel indices (row, col; pixel centres, 0-based) to (lon, lat) arrays of the same shape."""
+
+    def __call__(
+        self, rows: NDArray[np.float64], cols: NDArray[np.float64]
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]: ...
+
+
 class ShoreClass(StrEnum):
     OPEN_WATER = "open_water"
     NEAR_SHORE = "near_shore"
@@ -55,7 +63,12 @@ class SceneRaster:
     acquired_at: datetime
     sigma0_vv: NDArray[np.float32]  # linear sigma0, shape (rows, cols); NaN outside the Region
     transform: tuple[float, float, float, float, float, float]  # affine (a, b, c, d, e, f), pixel -> lon/lat
-    water_mask: NDArray[np.bool_] | None = None  # True = open water; set by the stage before detection
+    water_mask: NDArray[np.bool_] | None = None  # True = pixel the Detector may use (not land); set by the stage
+    # Accurate pixel -> lon/lat mapping (e.g. GCP interpolation). `transform` is only a coarse approximation
+    # for a Sentinel-1 window (up to ~200 m off); Detectors must report positions via `geolocate` when set.
+    # None means `transform` is exact (synthetic rasters, tests).
+    geolocate: Geolocator | None = None
+    bytes_downloaded: int = 0  # set by the fetcher; feeds FetchResult.bytes_downloaded
 
 
 @dataclass(frozen=True)
@@ -63,7 +76,7 @@ class DetectionCandidate:
     position: LonLat
     confidence: float  # 0..1
     length_m: float | None
-    pixel_box: tuple[int, int, int, int]  # (row0, col0, row1, col1), used to cut the Chip
+    pixel_box: tuple[int, int, int, int]  # (row0, col0, row1, col1), half-open (end excluded); cuts the Chip
 
 
 @dataclass(frozen=True)
@@ -114,8 +127,13 @@ class AisSource(Protocol):
 
 
 class LandMask(Protocol):
+    def not_land_mask(self, raster: SceneRaster) -> NDArray[np.bool_]:
+        """Mask aligned to `raster` (True = not land). Keeps the near-shore band so those ships are flagged,
+        not dropped. This is what the `detect` stage passes to the Detector as `raster.water_mask`."""
+        ...
+
     def water_mask(self, raster: SceneRaster) -> NDArray[np.bool_]:
-        """Open-water mask aligned to `raster` (True = open water). Excludes land and the near-shore band."""
+        """Stricter mask (True = open water): excludes land and the near-shore band."""
         ...
 
     def classify(self, position: LonLat) -> ShoreClass: ...
@@ -126,7 +144,8 @@ class Detector(Protocol):
     version: str  # bumps whenever behaviour or parameters change
 
     def detect(self, raster: SceneRaster) -> Sequence[DetectionCandidate]:
-        """Pure function of the raster and the Detector's own parameters. Uses `raster.water_mask` if set."""
+        """Pure function of the raster and the Detector's own parameters. Uses `raster.water_mask` if set and
+        reports positions through `raster.geolocate` when set, else `raster.transform`."""
         ...
 
 
@@ -146,7 +165,9 @@ class Validator(Protocol):
 class ObjectStore(Protocol):
     def put(self, key: str, data: bytes, content_type: str) -> None: ...
 
-    def get(self, key: str) -> bytes: ...
+    def get(self, key: str) -> bytes:
+        """Raises FileNotFoundError for a missing key."""
+        ...
 
     def exists(self, key: str) -> bool: ...
 
