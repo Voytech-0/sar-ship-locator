@@ -46,6 +46,7 @@ from pipeline.api.models import (
 )
 from pipeline.stages import StageContext, StageHandler, region_for_scene
 from pipeline.stages.chips import chip_npy, chip_png, cut_chip
+from pipeline.stages.preview import make_preview, save_preview
 from pipeline.stages.raster_store import delete_raster, load_raster, save_raster
 
 log = logging.getLogger(__name__)
@@ -157,6 +158,9 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
             chip_keys[det_id] = f"{base}.png"
         with ctx.db.connection() as conn:
             db.set_chip_keys(conn, chip_keys)
+        preview = make_preview(raster)  # the raster is deleted below, so the preview is made now
+        if preview:
+            save_preview(services.store, request.scene_id, preview)
         if cfg.retention.delete_raster_after_detect:
             delete_raster(services.store, request.scene_id)
         for shore_name in ("open_water", "near_shore"):

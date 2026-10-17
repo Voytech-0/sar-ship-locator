@@ -32,20 +32,30 @@ def chip_npy(chip: NDArray[np.float32]) -> bytes:
     return buf.getvalue()
 
 
-def chip_png(chip: NDArray[np.float32]) -> bytes:
-    """8-bit greyscale PNG, contrast-stretched in dB (stdlib only)."""
-    db = 10.0 * np.log10(np.maximum(chip, 1e-4))
-    img = np.clip((db - _DB_MIN) / (_DB_MAX - _DB_MIN) * 255.0, 0, 255).astype(np.uint8)
+def to_8bit(sigma0: NDArray[np.float32]) -> NDArray[np.uint8]:
+    """Linear sigma0 to 8 bit, contrast-stretched in dB."""
+    db = 10.0 * np.log10(np.maximum(sigma0, 1e-4))
+    return np.clip((db - _DB_MIN) / (_DB_MAX - _DB_MIN) * 255.0, 0, 255).astype(np.uint8)
+
+
+def png_bytes(img: NDArray[np.uint8]) -> bytes:
+    """PNG from an 8-bit array: (h, w) greyscale or (h, w, 2) grey + alpha (stdlib only)."""
+    colour_type = 0 if img.ndim == 2 else 4
     raw = b"".join(b"\x00" + img[i].tobytes() for i in range(img.shape[0]))
 
     def chunk(tag: bytes, data: bytes) -> bytes:
         body = tag + data
         return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
 
-    header = struct.pack(">IIBBBBB", img.shape[1], img.shape[0], 8, 0, 0, 0, 0)
+    header = struct.pack(">IIBBBBB", img.shape[1], img.shape[0], 8, colour_type, 0, 0, 0)
     return (
         b"\x89PNG\r\n\x1a\n"
         + chunk(b"IHDR", header)
         + chunk(b"IDAT", zlib.compress(raw))
         + chunk(b"IEND", b"")
     )
+
+
+def chip_png(chip: NDArray[np.float32]) -> bytes:
+    """8-bit greyscale PNG, contrast-stretched in dB."""
+    return png_bytes(to_8bit(chip))

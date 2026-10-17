@@ -127,6 +127,10 @@ def test_fixture_scene_through_all_five_stages(
     # land is masked before detection, so the island spot is never found
     assert not store.exists(f"scenes/{SCENE_ID}/sigma0.npy"), "raster is deleted after detect (retention)"
 
+    assert store.exists(f"scenes/{SCENE_ID}/preview.png"), "the preview outlives the raster"
+    bounds = json.loads(store.get(f"scenes/{SCENE_ID}/preview.json"))["bounds"]
+    assert bounds[0][0] < bounds[1][0] and bounds[0][1] < bounds[1][1]
+
     dets = api.client.get(f"/v1/scenes/{SCENE_ID}/detections").json()["features"]
     assert len(dets) == result["detection_count"] >= 3
     for d in dets:

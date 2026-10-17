@@ -14,3 +14,5 @@ data/
 !tests/fixtures/**
 # Agent worktrees
 .claude/
+
+site/data/

@@ -61,6 +61,10 @@ Detector `version` now labels a parameter set and comes from the Region config (
 
 Grafana has a third dashboard, Match analysis (`sar-matches`): outcome counts, match rate and median/p90 distance, a histogram of match distances, outcome by length and by confidence, median distance by AIS speed, per-scene table, a map of matches coloured by distance, and review tables with chips (furthest matches, ambiguous, longest unmatched). Variables: Shore (default open water) and Detector version. First readings on real data: Detections of 100 m or longer are matched 73-100 percent of the time, below 100 m only 9-15 percent; match distance grows with vessel speed (median 50 m at 0-3 kn, 120-180 m above), which points at the per-Detection acquisition time not being used yet (open item).
 
+## Review website (2026-10-17)
+
+`site/index.html` (Leaflet, no build step) shows a validated Scene: VV preview overlay (toggle, opacity), Detections by validation outcome with chips, dark-ship candidates, AIS vessels at acquisition time with +-10 min tracks, match links, filters, summary. Static: `site/data/` is git-ignored and made by `python -m pipeline.site_export` (`make site`; from Docker: `docker compose run --rm -v $PWD/site/data:/out pipeline-api python -m pipeline.site_export --out /out`), then `cd site && python3 -m http.server 8099` (8080 is Airflow). `detect` now writes `scenes/{id}/preview.png` + `preview.json` (30 m lat/lon grid, kept after the raster is deleted; storage.md updated). VV only for now: an RGB VV/VH ratio composite needs a VH fetch (contract + ADR-0004 change, not decided). Only the 14 Oct Scene was re-ingested with previews. Not done: GitHub Pages deploy, committed demo snapshot, preview size check on a full-overlap Scene (this one is a thin strip, 224 KB; cap is 5 MB).
+
 ## Bugs found by running it for real (fixed)
 
 - Fixture TIFF was big-endian while real files are little-endian, which hid a fetcher byte-order bug.

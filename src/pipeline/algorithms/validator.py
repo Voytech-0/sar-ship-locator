@@ -54,7 +54,7 @@ class NearestNeighbourValidator:
     ) -> Sequence[ValidationResult]:
         if not detections:
             return []
-        tracks = self._tracks_at(positions, acquired_at)
+        tracks = self.tracks_at(positions, acquired_at)
         mmsis = list(tracks)
         det_ll = np.array([d.position for d in detections], dtype=np.float64)
         lon0, lat0 = float(det_ll[:, 0].mean()), float(det_ll[:, 1].mean())
@@ -99,7 +99,7 @@ class NearestNeighbourValidator:
                 results.append(ValidationResult(det.detection_id, labels[i], None, None))
         return results
 
-    def _tracks_at(
+    def tracks_at(
         self, positions: Iterable[AisPosition], acquired_at: datetime
     ) -> dict[int, tuple[float, float]]:
         """Position of every trustworthy track at `acquired_at`, keyed by MMSI."""

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SAR Ship Locator</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root { --bg:#fff; --fg:#1b2430; --muted:#5b6674; --panel:#fffffff0; --line:#d5dbe3;
+          --matched:#1a9850; --unmatched:#d73027; --ambiguous:#e08a00; --dark:#7b1fa2; --ais:#1f6fd1; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+          --bg:#12171f; --fg:#e6ebf2; --muted:#9aa6b5; --panel:#171e28f0; --line:#2c3644;
+          --matched:#4cc38a; --unmatched:#ff6b5e; --ambiguous:#f0a93a; --dark:#c47bf0; --ais:#6aa8ff; } }
+  html,body { height:100%; margin:0; background:var(--bg); color:var(--fg);
+              font:14px/1.4 system-ui,sans-serif; }
+  #map { position:absolute; inset:0; background:#aab; }
+  #panel { position:absolute; z-index:1000; top:12px; left:56px; width:272px; max-height:calc(100% - 24px);
+           overflow:auto; box-sizing:border-box; padding:12px 14px; background:var(--panel);
+           border:1px solid var(--line); border-radius:8px; }
+  h1 { font-size:15px; margin:0 0 8px; }
+  label { display:flex; gap:6px; align-items:center; margin:3px 0; }
+  select, input[type=number] { width:100%; box-sizing:border-box; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px; }
+  .sec { margin-top:10px; padding-top:8px; border-top:1px solid var(--line); }
+  .muted { color:var(--muted); font-size:12px; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; }
+  .chip { display:block; width:128px; height:128px; image-rendering:pixelated; margin-top:6px; border:1px solid var(--line); }
+  @media (max-width:600px) { #panel { left:8px; right:8px; width:auto; max-height:45%; top:auto; bottom:8px; } }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel">
+  <h1>SAR Ship Locator</h1>
+  <select id="scene" aria-label="Scene"></select>
+  <div class="muted" id="when"></div>
+  <div class="sec">
+    <label><input type="checkbox" id="l-sar" checked> SAR (VV)</label>
+    <input type="range" id="opacity" min="0" max="1" step="0.05" value="0.85" aria-label="SAR opacity">
+    <label><input type="checkbox" id="l-det" checked> Detections</label>
+    <label><input type="checkbox" id="l-ais" checked> AIS vessels and tracks</label>
+    <label><input type="checkbox" id="l-links" checked> Match links</label>
+  </div>
+  <div class="sec">
+    <label><input type="checkbox" class="f-label" value="matched" checked><span class="dot" style="background:var(--matched)"></span>Matched</label>
+    <label><input type="checkbox" class="f-label" value="unmatched" checked><span class="dot" style="background:var(--unmatched)"></span>Unmatched</label>
+    <label><input type="checkbox" class="f-label" value="ambiguous" checked><span class="dot" style="background:var(--ambiguous)"></span>Ambiguous</label>
+    <label><input type="checkbox" id="f-dark"> Dark-ship candidates only</label>
+    <label><input type="checkbox" id="f-open" checked> Open water only</label>
+    <div class="row">
+      <label>Length ≥ m <input type="number" id="f-len" value="0" min="0" step="10"></label>
+      <label>Conf ≥ <input type="number" id="f-conf" value="0" min="0" max="1" step="0.1"></label>
+    </div>
+  </div>
+  <div class="sec muted" id="stats"></div>
+  <div class="sec muted">Unmatched means no AIS vessel at the position: small boats, clutter and AIS gaps included. A dark-ship candidate (unmatched, open water, ≥100 m, confidence ≥0.9) is not proof.</div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const COLORS = { matched:'--matched', unmatched:'--unmatched', ambiguous:'--ambiguous' };
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const $ = id => document.getElementById(id);
+const map = L.map('map').setView([55.4, 11.0], 9);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  { maxZoom: 18, attribution: '© OpenStreetMap contributors' }).addTo(map);
+const g = { det: L.layerGroup().addTo(map), ais: L.layerGroup().addTo(map), links: L.layerGroup().addTo(map) };
+let sar = null, scene = null, base = '';
+
+const isDark = d => d.label === 'unmatched' && d.shore === 'open_water' && d.length_m >= 100 && d.confidence >= 0.9;
+const fetchJson = async u => { const r = await fetch(u); if (!r.ok) throw new Error(u + ': ' + r.status); return r.json(); };
+
+function visible(d) {
+  const labels = [...document.querySelectorAll('.f-label:checked')].map(e => e.value);
+  return labels.includes(d.label) && (!$('f-open').checked || d.shore === 'open_water')
+    && (!$('f-dark').checked || isDark(d)) && (d.length_m || 0) >= +$('f-len').value
+    && d.confidence >= +$('f-conf').value;
+}
+
+function popup(d) {
+  const ais = d.matched_mmsi ? `<br>AIS ${d.matched_mmsi}, ${Math.round(d.match_distance_m)} m away` : '';
+  const chip = d.chip ? `<img class="chip" src="${base}/${d.chip}" alt="chip">` : '';
+  return `<b>${d.label || 'not validated'}</b>${isDark(d) ? ' · dark-ship candidate' : ''}<br>` +
+    `${d.shore.replace('_', ' ')} · ${d.length_m ? Math.round(d.length_m) + ' m' : 'length ?'} · conf ${d.confidence.toFixed(2)}${ais}${chip}`;
+}
+
+function draw() {
+  Object.values(g).forEach(l => l.clearLayers());
+  if (!scene) return;
+  const byMmsi = Object.fromEntries(scene.ais.map(v => [v.mmsi, v]));
+  const shown = scene.detections.filter(visible);
+  for (const d of shown) {
+    L.circleMarker([d.lat, d.lon], { radius: isDark(d) ? 8 : 5, weight: isDark(d) ? 3 : 1,
+      color: isDark(d) ? css('--dark') : '#000', fillColor: css(COLORS[d.label] || '--muted'), fillOpacity: .9 })
+      .bindPopup(popup(d)).addTo(g.det);
+    const v = byMmsi[d.matched_mmsi];
+    if (v) L.polyline([[d.lat, d.lon], [v.lat, v.lon]], { color: css('--matched'), weight: 2, dashArray: '4 3' }).addTo(g.links);
+  }
+  for (const v of scene.ais) {
+    const t = v.track.map(p => [p[1], p[0]]);
+    if (t.length > 1) L.polyline(t, { color: css('--ais'), weight: 1.5, opacity: .7 }).addTo(g.ais);
+    L.circleMarker([v.lat, v.lon], { radius: 4, color: css('--ais'), fillColor: '#fff', fillOpacity: 1, weight: 2 })
+      .bindPopup(`AIS ${v.mmsi}<br>${v.sog_knots ?? '?'} kn at acquisition`).addTo(g.ais);
+  }
+  const s = scene.stats, ow = s.open_water;
+  $('stats').innerHTML = `${shown.length} of ${s.detections} Detections shown<br>Open water: ` +
+    `${ow.matched || 0} matched, ${ow.unmatched || 0} unmatched, ${ow.ambiguous || 0} ambiguous` +
+    (s.match_rate == null ? '' : `<br>Match rate ${(s.match_rate * 100).toFixed(0)}%, median distance ${Math.round(s.median_match_distance_m)} m`) +
+    `<br>${scene.ais.length} AIS vessels`;
+  for (const [k, l] of Object.entries({ det: 'l-det', ais: 'l-ais', links: 'l-links' }))
+    $(l).checked ? map.addLayer(g[k]) : map.removeLayer(g[k]);
+}
+
+async function load(id) {
+  base = `data/${id}`;
+  scene = await fetchJson(`${base}/scene.json`);
+  $('when').textContent = new Date(scene.acquired_at).toUTCString();
+  if (sar) map.removeLayer(sar);
+  sar = null;
+  if (scene.preview) {
+    sar = L.imageOverlay(`${base}/${scene.preview.url}`, scene.preview.bounds, { opacity: +$('opacity').value });
+    if ($('l-sar').checked) sar.addTo(map);
+    map.fitBounds(scene.preview.bounds);
+  }
+  draw();
+}
+
+(async () => {
+  try {
+    const index = await fetchJson('data/index.json');
+    $('scene').innerHTML = index.scenes.map(s => `<option value="${s.scene_id}">${s.acquired_at.slice(0, 16).replace('T', ' ')} · ${s.scene_id}</option>`).join('');
+    $('scene').value = index.default;
+    await load(index.default);
+  } catch (e) {
+    $('stats').textContent = 'No data yet: run make site, then serve this folder. (' + e.message + ')';
+  }
+})();
+
+$('scene').onchange = e => load(e.target.value);
+$('opacity').oninput = e => sar && sar.setOpacity(+e.target.value);
+$('l-sar').onchange = e => sar && (e.target.checked ? sar.addTo(map) : map.removeLayer(sar));
+document.querySelectorAll('#panel input:not(#opacity):not(#l-sar), #panel select:not(#scene)').forEach(e => e.addEventListener('input', draw));
+</script>
+</body>
+</html>
