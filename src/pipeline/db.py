@@ -156,11 +156,11 @@ def insert_scene(
     """Register a discovered Scene. Returns False if it already exists (discovery is idempotent)."""
     cur = conn.execute(
         """
-        INSERT INTO scenes (scene_id, region_id, acquired_at, footprint)
-        VALUES (%s, %s, %s, ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326))
+        INSERT INTO scenes (scene_id, region_id, acquired_at, acquired_start, footprint)
+        VALUES (%s, %s, %s, %s, ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326))
         ON CONFLICT (scene_id) DO NOTHING
         """,
-        (scene_id, region_id, acquired_at, ring_to_geojson(footprint_ring)),
+        (scene_id, region_id, acquired_at, acquired_at, ring_to_geojson(footprint_ring)),
     )
     return cur.rowcount == 1
 
@@ -181,6 +181,14 @@ def mark_scene_done(conn: Conn, scene_id: str, status: str, raster_key: str | No
         """,
         (status, raster_key, scene_id),
     )
+
+
+def get_scene_start(conn: Conn, scene_id: str) -> datetime:
+    """The catalogue acquisition time (start of the acquisition); unlike `acquired_at` it never changes."""
+    row = conn.execute("SELECT acquired_start FROM scenes WHERE scene_id = %s", (scene_id,)).fetchone()
+    assert row is not None
+    start: datetime = row["acquired_start"]
+    return start
 
 
 def set_scene_acquired_at(conn: Conn, scene_id: str, acquired_at: datetime) -> None:

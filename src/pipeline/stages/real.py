@@ -97,12 +97,11 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
         cfg = region_for_scene(ctx, request.scene_id)
         with ctx.db.connection() as conn:
             row = db.get_scene(conn, request.scene_id)
+            start = db.get_scene_start(conn, request.scene_id)  # not row["acquired_at"]: fetch rewrites that
         assert row is not None
         ring = [(float(x), float(y)) for x, y in row["footprint"]["coordinates"][0]]
         with _source("cdse"):
-            raster = services.fetcher.fetch(
-                SceneRef(request.scene_id, row["acquired_at"], ring), to_region(cfg)
-            )
+            raster = services.fetcher.fetch(SceneRef(request.scene_id, start, ring), to_region(cfg))
         metrics.bytes_downloaded("cdse", raster.bytes_downloaded)
         key = save_raster(services.store, raster)
         with ctx.db.connection() as conn:  # the Region data's own time, used for AIS matching

@@ -19,7 +19,8 @@ CREATE TABLE regions (
 CREATE TABLE scenes (
     scene_id      text PRIMARY KEY,                          -- Sentinel-1 product name
     region_id     text NOT NULL REFERENCES regions,
-    acquired_at   timestamptz NOT NULL,
+    acquired_at   timestamptz NOT NULL,                      -- time of the Region's rows once fetched (see acquired_start)
+    acquired_start timestamptz NOT NULL,                     -- catalogue time (start of the acquisition), never changes
     footprint     geometry(Polygon, 4326) NOT NULL,
     status        scene_status NOT NULL DEFAULT 'discovered',
     failed_stage  stage,
@@ -29,6 +30,14 @@ CREATE TABLE scenes (
     updated_at    timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT failed_has_stage CHECK ((status = 'failed') = (failed_stage IS NOT NULL))
 );
+-- The catalogue time defaults to acquired_at on insert (fetch later moves acquired_at, never acquired_start).
+CREATE FUNCTION scenes_default_acquired_start() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    NEW.acquired_start := COALESCE(NEW.acquired_start, NEW.acquired_at);
+    RETURN NEW;
+END $$;
+CREATE TRIGGER scenes_acquired_start BEFORE INSERT ON scenes
+    FOR EACH ROW EXECUTE FUNCTION scenes_default_acquired_start();
 CREATE INDEX scenes_status_idx ON scenes (status, acquired_at DESC);
 CREATE INDEX scenes_region_idx ON scenes (region_id, acquired_at DESC);
 

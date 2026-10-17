@@ -23,6 +23,8 @@ from contracts.protocols import AisPosition, Region, SceneRef
 from pipeline.adapters import S3ObjectStore, Sentinel1S3Fetcher
 from pipeline.algorithms import CaCfarDetector, NearestNeighbourValidator, PolygonLandMask
 from pipeline.algorithms.ais_dma import iter_dma_positions
+from pipeline.api.models import SceneStageRequest, Stage
+from pipeline.stages import StageContext
 from pipeline.stages.real import Services, make_registry
 from tests.api.conftest import Api
 
@@ -91,8 +93,13 @@ def pipeline(s3: Any, make_api: Callable[..., Api]) -> tuple[Api, S3ObjectStore,
         detectors={"ca-cfar": CaCfarDetector.from_params},
         validator=NearestNeighbourValidator(),
     )
-    api = make_api(registry=make_registry(services))
-    return api, store, {"island": (lon[0], lat[0]), "r0": r0, "c0": c0, "geolocate": probe.geolocate}
+    registry = make_registry(services)
+    api = make_api(registry=registry)
+    return (
+        api,
+        store,
+        {"island": (lon[0], lat[0]), "r0": r0, "c0": c0, "geolocate": probe.geolocate, "registry": registry},
+    )
 
 
 def test_fixture_scene_through_all_five_stages(
@@ -153,3 +160,20 @@ def test_fixture_scene_through_all_five_stages(
     assert 'sar_ais_positions_loaded_total{region_id="great-belt"}' in body
     assert 'sar_bytes_downloaded_total{source="cdse"}' in body
     assert 'sar_source_requests_total{outcome="ok",source="dma"}' in body
+
+
+def test_refetching_does_not_shift_the_acquisition_time(
+    pipeline: tuple[Api, S3ObjectStore, dict[str, Any]],
+) -> None:
+    """fetch rewrites acquired_at to the Region data's time; it must derive that from the catalogue start."""
+    api, _, probe = pipeline
+    api.discover()
+    ctx = StageContext(api.db, api.app.state.config)
+    fetch = probe["registry"][Stage.FETCH]
+    request = SceneStageRequest(scene_id=SCENE_ID)
+
+    fetch(ctx, request)
+    first = api.scene(SCENE_ID)["acquired_at"]
+    fetch(ctx, request)
+    assert api.scene(SCENE_ID)["acquired_at"] == first
+    assert datetime.fromisoformat(first) != ACQUIRED  # it was moved once, from the catalogue start
