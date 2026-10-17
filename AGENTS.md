@@ -51,6 +51,10 @@ Detector `version` now labels a parameter set and comes from the Region config (
 
 `python -m pipeline.dataset <version>` (module `pipeline/dataset.py`) writes `datasets/<version>/manifest.json` and `chips.npz` to the object store. Labels are weak AIS labels (matched = 1, unmatched = 0, ambiguous left out by default); versions are immutable; splits are allocated over whole scenes (`assign_splits`: 70/15/15, floor with a minimum of one scene per split from three scenes up). A first attempt hashed each scene independently and, with only 5 scenes, put all of them in `train`; the allocation fixed that. First real export `v2`: 747 examples from 5 scenes (train 679, validation 39, test 29; 69 matched in all). Dataset `v1` in the local object store has the flawed all-train split and can be deleted.
 
+## Grafana (2026-10-17)
+
+`deploy/grafana/build_dashboards.py` generates both dashboards (regenerate with `uv run python deploy/grafana/build_dashboards.py`, then restart Grafana). All panel queries were checked through Grafana's query API against real data. The Detections dashboard has: per-scene counts, label split, a map of all Detections coloured by validation outcome, a map and table of the dark-ship candidates, and a chip gallery with Label and Shore filters. Chips are PNGs in the object store, which a browser cannot reach, so pipeline-api serves them at `GET /v1/detections/{id}/chip` and the tables show them as image cells; the constant dashboard variable `api_url` (default http://localhost:8000) is where the browser finds the API. The default Grafana basemap is CARTO, which now returns watermarked "API key required" tiles, so the maps use OpenStreetMap.
+
 ## Bugs found by running it for real (fixed)
 
 - Fixture TIFF was big-endian while real files are little-endian, which hid a fetcher byte-order bug.

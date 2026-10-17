@@ -199,6 +199,25 @@ paths:
               schema: {$ref: '#/components/schemas/DetectionCollection'}
         '404': {$ref: '#/components/responses/NotFound'}
 
+  /detections/{detection_id}/chip:
+    get:
+      tags: [data]
+      operationId: getDetectionChip
+      summary: The Chip (64x64 cutout, contrast-stretched in dB) of a Detection as a PNG, for dashboards and review.
+      parameters:
+        - {name: detection_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: The Chip image. Unchanged for the life of the Detection, so it may be cached.
+          content:
+            image/png:
+              schema: {type: string, format: binary}
+        '404':
+          description: Unknown Detection, a Detection without a Chip, or no object store configured.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+
   /healthz:
     get:
       tags: [ops]

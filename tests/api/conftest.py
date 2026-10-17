@@ -122,9 +122,11 @@ def make_api(pg_dsn: str) -> Iterator[Callable[..., Api]]:
     """Factory: `make_api(registry=..., start_workers=...)`. Apps are shut down at test end."""
     stack = ExitStack()
 
-    def factory(registry: Registry | None = None, *, start_workers: bool = False, workers: int = 2) -> Api:
+    def factory(
+        registry: Registry | None = None, *, start_workers: bool = False, workers: int = 2, **app_kwargs: Any
+    ) -> Api:
         settings = Settings(database_url=pg_dsn, workers=workers, poll_interval_s=0.05)
-        app = create_app(settings, registry=registry, start_workers=start_workers)
+        app = create_app(settings, registry=registry, start_workers=start_workers, **app_kwargs)
         client = stack.enter_context(TestClient(app, raise_server_exceptions=False))
         return Api(app, client, pg_dsn)
 

@@ -13,6 +13,9 @@
     "to": "now"
   },
   "refresh": "1m",
+  "templating": {
+    "list": []
+  },
   "panels": [
     {
       "id": 1,

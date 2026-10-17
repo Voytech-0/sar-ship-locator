@@ -7,6 +7,7 @@ see `pipeline.api.config.Settings`). The schema is applied to the database by th
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -18,6 +19,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from contracts.protocols import ObjectStore
 from pipeline import db, jobs, metrics
 from pipeline.api.config import AppConfig, Settings, load_app_config
 from pipeline.api.models import (
@@ -177,6 +179,27 @@ def build_router() -> APIRouter:
         body = DetectionCollection(features=[_feature(r) for r in rows])
         return JSONResponse(body.model_dump(mode="json"), media_type="application/geo+json")
 
+    @router.get("/detections/{detection_id}/chip", response_class=Response)
+    def get_detection_chip(request: Request, detection_id: str) -> Response:
+        store: ObjectStore | None = request.app.state.chip_store
+        try:
+            valid = str(uuid.UUID(detection_id)) == detection_id.lower()
+        except ValueError:
+            valid = False
+        if store is None or not valid:
+            raise NotFoundError(f"no chip for detection {detection_id!r}")
+        with request.app.state.db.connection() as conn:
+            key = db.get_chip_key(conn, detection_id)
+        if key is None:
+            raise NotFoundError(f"no chip for detection {detection_id!r}")
+        try:
+            png = store.get(key)
+        except FileNotFoundError as exc:  # e.g. the object store was wiped
+            raise NotFoundError(
+                f"chip of detection {detection_id!r} is missing from the object store"
+            ) from exc
+        return Response(png, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
+
     @router.get("/healthz")
     def healthz(request: Request) -> Response:
         checks: dict[str, Callable[[], None]] = request.app.state.health_checks
@@ -228,6 +251,7 @@ def create_app(
     registry: Registry | None = None,
     start_workers: bool = True,
     health_checks: Mapping[str, Callable[[], None]] | None = None,
+    chip_store: ObjectStore | None = None,
 ) -> FastAPI:
     """Build the service. `registry` overrides stage handlers (default: stubs); `start_workers=False`
     leaves Jobs queued so tests can drive them with `app.state.runner.run_pending()`."""
@@ -250,6 +274,7 @@ def create_app(
         app.state.db = database
         app.state.config = config
         app.state.runner = runner
+        app.state.chip_store = chip_store
         app.state.health_checks = {"database": database.ping, **(health_checks or {})}
         if start_workers:
             runner.start()

@@ -13,6 +13,82 @@
     "to": "now"
   },
   "refresh": "1m",
+  "templating": {
+    "list": [
+      {
+        "type": "constant",
+        "name": "api_url",
+        "query": "http://localhost:8000",
+        "hide": 2
+      },
+      {
+        "type": "custom",
+        "name": "label",
+        "label": "Label",
+        "query": "All,matched,unmatched,ambiguous,unvalidated",
+        "options": [
+          {
+            "text": "All",
+            "value": "All",
+            "selected": true
+          },
+          {
+            "text": "matched",
+            "value": "matched",
+            "selected": false
+          },
+          {
+            "text": "unmatched",
+            "value": "unmatched",
+            "selected": false
+          },
+          {
+            "text": "ambiguous",
+            "value": "ambiguous",
+            "selected": false
+          },
+          {
+            "text": "unvalidated",
+            "value": "unvalidated",
+            "selected": false
+          }
+        ],
+        "current": {
+          "text": "All",
+          "value": "All",
+          "selected": true
+        }
+      },
+      {
+        "type": "custom",
+        "name": "shore",
+        "label": "Shore",
+        "query": "All,open_water,near_shore",
+        "options": [
+          {
+            "text": "All",
+            "value": "All",
+            "selected": true
+          },
+          {
+            "text": "open_water",
+            "value": "open_water",
+            "selected": false
+          },
+          {
+            "text": "near_shore",
+            "value": "near_shore",
+            "selected": false
+          }
+        ],
+        "current": {
+          "text": "All",
+          "value": "All",
+          "selected": true
+        }
+      }
+    ]
+  },
   "panels": [
     {
       "id": 1,
@@ -297,7 +373,7 @@
     },
     {
       "id": 6,
-      "title": "Dark-ship candidates: detail",
+      "title": "Dark-ship candidates: chips and detail",
       "type": "table",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -311,7 +387,27 @@
       },
       "fieldConfig": {
         "defaults": {},
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "chip"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "image",
+                  "title": "chip"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          }
+        ]
       },
       "targets": [
         {
@@ -323,9 +419,69 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT c.lat AS latitude, c.lon AS longitude, c.confidence, c.length_m, c.scene_id, c.acquired_at\nFROM dark_ship_candidates c\nWHERE $__timeFilter(c.acquired_at)\nORDER BY c.acquired_at DESC\nLIMIT 500"
+          "rawSql": "SELECT '$api_url/v1/detections/' || c.detection_id || '/chip' AS chip,\n       c.acquired_at, c.confidence, c.length_m, c.lat AS latitude, c.lon AS longitude, c.scene_id\nFROM dark_ship_candidates c\nWHERE $__timeFilter(c.acquired_at)\nORDER BY c.acquired_at DESC, c.confidence DESC\nLIMIT 100"
         }
-      ]
+      ],
+      "options": {
+        "cellHeight": "lg",
+        "showHeader": true
+      }
+    },
+    {
+      "id": 7,
+      "title": "Chip gallery (highest confidence first; filter by label and shore above)",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgis"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 24,
+        "h": 16
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "chip"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "image",
+                  "title": "chip"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgis"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT '$api_url/v1/detections/' || d.id || '/chip' AS chip,\n       COALESCE(v.label::text, 'unvalidated') AS label,\n       d.confidence, d.length_m, d.shore::text AS shore, s.acquired_at\nFROM detections d\nJOIN scenes s ON s.scene_id = d.scene_id\nLEFT JOIN validations v ON v.detection_id = d.id\nWHERE d.chip_key IS NOT NULL AND $__timeFilter(s.acquired_at)\n  AND ('$label' = 'All' OR COALESCE(v.label::text, 'unvalidated') = '$label')\n  AND ('$shore' = 'All' OR d.shore::text = '$shore')\nORDER BY d.confidence DESC\nLIMIT 60"
+        }
+      ],
+      "options": {
+        "cellHeight": "lg",
+        "showHeader": true
+      }
     }
   ]
 }

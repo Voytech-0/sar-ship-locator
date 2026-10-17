@@ -50,6 +50,7 @@ def sql_panel(
     fmt: str = "time_series",
     options: dict[str, Any] | None = None,
     defaults: dict[str, Any] | None = None,
+    overrides: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     panel: dict[str, Any] = {
         "id": pid,
@@ -57,7 +58,7 @@ def sql_panel(
         "type": kind,
         "datasource": PG,
         "gridPos": grid,
-        "fieldConfig": {"defaults": defaults or {}, "overrides": []},
+        "fieldConfig": {"defaults": defaults or {}, "overrides": overrides or []},
         "targets": [
             {
                 "refId": "A",
@@ -74,7 +75,14 @@ def sql_panel(
     return panel
 
 
-def dashboard(uid: str, title: str, panels: list[dict[str, Any]]) -> dict[str, Any]:
+# Where the browser reaches pipeline-api, which serves the Chip images. Change it in the dashboard's
+# settings when the stack is not on localhost.
+API_URL = {"type": "constant", "name": "api_url", "query": "http://localhost:8000", "hide": 2}
+
+
+def dashboard(
+    uid: str, title: str, panels: list[dict[str, Any]], variables: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
     return {
         "uid": uid,
         "title": title,
@@ -85,6 +93,7 @@ def dashboard(uid: str, title: str, panels: list[dict[str, Any]]) -> dict[str, A
         "editable": False,
         "time": {"from": "now-30d", "to": "now"},
         "refresh": "1m",
+        "templating": {"list": variables or []},
         "panels": panels,
     }
 
@@ -285,6 +294,53 @@ DARK_GEOMAP_OPTIONS = {
 }
 
 
+DARK_CANDIDATE_DETAIL = """\
+SELECT '$api_url/v1/detections/' || c.detection_id || '/chip' AS chip,
+       c.acquired_at, c.confidence, c.length_m, c.lat AS latitude, c.lon AS longitude, c.scene_id
+FROM dark_ship_candidates c
+WHERE $__timeFilter(c.acquired_at)
+ORDER BY c.acquired_at DESC, c.confidence DESC
+LIMIT 100"""
+
+CHIP_GALLERY = """\
+SELECT '$api_url/v1/detections/' || d.id || '/chip' AS chip,
+       COALESCE(v.label::text, 'unvalidated') AS label,
+       d.confidence, d.length_m, d.shore::text AS shore, s.acquired_at
+FROM detections d
+JOIN scenes s ON s.scene_id = d.scene_id
+LEFT JOIN validations v ON v.detection_id = d.id
+WHERE d.chip_key IS NOT NULL AND $__timeFilter(s.acquired_at)
+  AND ('$label' = 'All' OR COALESCE(v.label::text, 'unvalidated') = '$label')
+  AND ('$shore' = 'All' OR d.shore::text = '$shore')
+ORDER BY d.confidence DESC
+LIMIT 60"""
+
+
+def _choice(name: str, label: str, values: list[str]) -> dict[str, Any]:
+    options = [{"text": v, "value": v, "selected": v == "All"} for v in ["All", *values]]
+    return {
+        "type": "custom",
+        "name": name,
+        "label": label,
+        "query": ",".join(["All", *values]),
+        "options": options,
+        "current": options[0],
+    }
+
+
+# Show a Chip URL column as the image itself (Grafana table cell type "image").
+CHIP_IMAGE = [
+    {
+        "matcher": {"id": "byName", "options": "chip"},
+        "properties": [
+            {"id": "custom.cellOptions", "value": {"type": "image", "title": "chip"}},
+            {"id": "custom.width", "value": 110},
+        ],
+    }
+]
+TALL_ROWS = {"cellHeight": "lg", "showHeader": True}
+
+
 def detections() -> dict[str, Any]:
     return dashboard(
         "sar-detections",
@@ -327,12 +383,29 @@ def detections() -> dict[str, Any]:
             ),
             sql_panel(
                 6,
-                "Dark-ship candidates: detail",
+                "Dark-ship candidates: chips and detail",
                 "table",
-                DARK_SHIP_CANDIDATES,
+                DARK_CANDIDATE_DETAIL,
                 _grid(12, 22, 12, 12),
                 fmt="table",
+                options=TALL_ROWS,
+                overrides=CHIP_IMAGE,
             ),
+            sql_panel(
+                7,
+                "Chip gallery (highest confidence first; filter by label and shore above)",
+                "table",
+                CHIP_GALLERY,
+                _grid(0, 34, 24, 16),
+                fmt="table",
+                options=TALL_ROWS,
+                overrides=CHIP_IMAGE,
+            ),
+        ],
+        variables=[
+            API_URL,
+            _choice("label", "Label", ["matched", "unmatched", "ambiguous", "unvalidated"]),
+            _choice("shore", "Shore", ["open_water", "near_shore"]),
         ],
     )
 

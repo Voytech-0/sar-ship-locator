@@ -15,4 +15,8 @@ def app() -> FastAPI:
     def object_store_ping() -> None:
         services.store.exists("healthcheck")  # raises if the store is unreachable
 
-    return create_app(registry=make_registry(services), health_checks={"object_store": object_store_ping})
+    return create_app(
+        registry=make_registry(services),
+        health_checks={"object_store": object_store_ping},
+        chip_store=services.store,
+    )

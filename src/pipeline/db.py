@@ -376,6 +376,13 @@ def latest_ais_day(conn: Conn) -> list[Row]:
     return conn.execute("SELECT region_id, max(day) AS d FROM ais_loaded_days GROUP BY 1").fetchall()
 
 
+def get_chip_key(conn: Conn, detection_id: str) -> str | None:
+    """The object store key of a Detection's Chip PNG, or None (unknown id, or no Chip)."""
+    row = conn.execute("SELECT chip_key FROM detections WHERE id = %s::uuid", (detection_id,)).fetchone()
+    key: str | None = row["chip_key"] if row else None
+    return key
+
+
 def set_chip_keys(conn: Conn, chip_keys: dict[str, str]) -> None:
     for detection_id, key in chip_keys.items():
         conn.execute("UPDATE detections SET chip_key = %s WHERE id = %s::uuid", (key, detection_id))
