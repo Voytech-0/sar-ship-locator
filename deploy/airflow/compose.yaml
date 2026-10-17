@@ -1,0 +1,83 @@
+# Airflow 3 stack (ADR-0001): LocalExecutor, its own Postgres, DAGs mounted from dags/.
+# Standalone: docker compose -f deploy/airflow/compose.yaml up   (pipeline-api must be reachable at PIPELINE_API_URL)
+# Meant to be merged into the main compose file, where pipeline-api shares the default network.
+#
+# Required env (see .env.example): AIRFLOW_DB_PASSWORD, AIRFLOW_FERNET_KEY, AIRFLOW_JWT_SECRET, AIRFLOW_API_SECRET_KEY.
+
+name: sar-airflow
+
+x-airflow-common: &airflow-common
+  build:
+    context: ../../dags
+    dockerfile: ../deploy/airflow/Dockerfile
+  image: sar-airflow:3.3.2
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "False"  # a fresh deployment starts running by itself
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?set AIRFLOW_FERNET_KEY}
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:?set AIRFLOW_JWT_SECRET}
+    AIRFLOW__API__SECRET_KEY: ${AIRFLOW_API_SECRET_KEY:?set AIRFLOW_API_SECRET_KEY}
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD:?set AIRFLOW_DB_PASSWORD}@airflow-db/airflow
+    PIPELINE_API_URL: ${PIPELINE_API_URL:-http://pipeline-api:8000/v1}
+    PIPELINE_POLL_SECONDS: ${PIPELINE_POLL_SECONDS:-15}
+    AIS_LAG_DAYS: ${AIS_LAG_DAYS:-3}
+  volumes:
+    - ../../dags:/opt/airflow/dags
+    - airflow-logs:/opt/airflow/logs
+  depends_on:
+    airflow-init:
+      condition: service_completed_successfully
+  restart: unless-stopped
+
+services:
+  airflow-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD:?set AIRFLOW_DB_PASSWORD}
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  airflow-init:
+    <<: *airflow-common
+    command: ["db", "migrate"]
+    restart: "no"
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: ["api-server"]
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/version"]
+      interval: 15s
+      retries: 10
+      start_period: 30s
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: ["scheduler"]
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: ["dag-processor"]
+
+  # Needed because the stage operators are deferrable: the triggerer runs JobPollTrigger.
+  airflow-triggerer:
+    <<: *airflow-common
+    command: ["triggerer"]
+
+volumes:
+  airflow-db-data:
+  airflow-logs:
