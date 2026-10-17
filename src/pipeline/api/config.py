@@ -30,7 +30,8 @@ class DetectorConfig(_Strict):
 
 
 class LandMaskConfig(_Strict):
-    near_shore_m: float = Field(default=300, ge=0)
+    near_shore_m: float = Field(default=300, ge=0)  # kept but flagged `near_shore`
+    exclusion_m: float = Field(default=0, ge=0)  # ignored like land
 
 
 class ValidationConfig(_Strict):

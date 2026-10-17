@@ -55,6 +55,12 @@ Detector `version` now labels a parameter set and comes from the Region config (
 
 `deploy/grafana/build_dashboards.py` generates both dashboards (regenerate with `uv run python deploy/grafana/build_dashboards.py`, then restart Grafana). All panel queries were checked through Grafana's query API against real data. The Detections dashboard has: per-scene counts, label split, a map of all Detections coloured by validation outcome, a map and table of the dark-ship candidates, and a chip gallery with Label and Shore filters. Chips are PNGs in the object store, which a browser cannot reach, so pipeline-api serves them at `GET /v1/detections/{id}/chip` and the tables show them as image cells; the constant dashboard variable `api_url` (default http://localhost:8000) is where the browser finds the API. The default Grafana basemap is CARTO, which now returns watermarked "API key required" tiles, so the maps use OpenStreetMap.
 
+## Exclusion zone and the match-analysis dashboard (2026-10-17)
+
+`land_mask.exclusion_m` (Region config, now 100): Detections within 100 m of land are ignored like land (quays, piers, moored boats); `near_shore_m` (300) still only flags. `PolygonLandMask` removes the zone from the detection mask and classifies positions inside it as ON_LAND. Offline on three scenes: near-shore Detections 590 to 31, matched ships 47 to 47. Re-run on the live stack: total Detections 827 to 241, near-shore about 590 to 48.
+
+Grafana has a third dashboard, Match analysis (`sar-matches`): outcome counts, match rate and median/p90 distance, a histogram of match distances, outcome by length and by confidence, median distance by AIS speed, per-scene table, a map of matches coloured by distance, and review tables with chips (furthest matches, ambiguous, longest unmatched). Variables: Shore (default open water) and Detector version. First readings on real data: Detections of 100 m or longer are matched 73-100 percent of the time, below 100 m only 9-15 percent; match distance grows with vessel speed (median 50 m at 0-3 kn, 120-180 m above), which points at the per-Detection acquisition time not being used yet (open item).
+
 ## Bugs found by running it for real (fixed)
 
 - Fixture TIFF was big-endian while real files are little-endian, which hid a fetcher byte-order bug.
@@ -81,4 +87,4 @@ Detector `version` now labels a parameter set and comes from the Region config (
 3. **Re-processing:** a `detect` cannot be re-run on a `detected` Scene via the API, and the raster is deleted after detect, so changing the detector means re-fetching (ADR-0003 vs API; deferred until the ML layer exists). Local dev: wipe the volumes (`docker volume rm sar_pg-data sar_store-data`).
 4. **Docs:** amend ADR-0004 (IFD at end, little-endian) and PLAN/ADR-0001 (triggerer container; PLAN still mentions MinIO/vv.tif in places).
 5. **Cleanup:** AIS CSV parsing is duplicated in `adapters/dma.py` and `algorithms/ais_dma.py`; unify. Remove merged worktrees under `.claude/worktrees/` and merged stream branches. `scripts/check_schema.sh` still uses the amd64-only `postgis/postgis:16-3.4`. One schemathesis subtest failed once in a full-suite run and did not reproduce in 5 reruns (watch for flakiness).
-6. **Not done:** per-Detection acquisition time for validation; Grafana panels checked against real data; alerting beyond the two rules.
+6. **Not done:** per-Detection acquisition time for validation (match distance grows with vessel speed, so this is the likely biggest accuracy gain); Grafana panels checked against real data; alerting beyond the two rules.

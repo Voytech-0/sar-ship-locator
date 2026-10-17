@@ -27,7 +27,7 @@ def _panels(path: Path) -> list[dict[str, Any]]:
 
 
 def test_dashboards_exist() -> None:
-    assert {p.name for p in DASHBOARD_FILES} == {"pipeline-health.json", "detections.json"}
+    assert {p.name for p in DASHBOARD_FILES} == {"pipeline-health.json", "detections.json", "matches.json"}
 
 
 def test_committed_json_matches_generator() -> None:

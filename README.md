@@ -15,7 +15,7 @@ Needs Docker and a free [Copernicus Data Space](https://dataspace.copernicus.eu)
 | Service | URL |
 |---|---|
 | Airflow (DAGs: scene_pipeline, ais_load, validation) | http://localhost:8080 (admin password is printed in the api-server logs) |
-| Grafana (pipeline health, detection maps, dark-ship candidates, chip gallery) | http://localhost:3000 |
+| Grafana (pipeline health, detection maps, dark-ship candidates, chip gallery, match analysis) | http://localhost:3000 |
 | Pipeline API (OpenAPI in `contracts/openapi.yaml`) | http://localhost:8000/v1/scenes |
 | Prometheus | http://localhost:9090 |
 

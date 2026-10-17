@@ -129,3 +129,36 @@ def test_near_shore_ship_found_and_flagged_but_not_with_water_mask() -> None:
     assert len(via_not_land) == 1
     assert mask.classify(via_not_land[0].position) == ShoreClass.NEAR_SHORE
     assert via_water == []
+
+
+def test_exclusion_zone_is_ignored_like_land_but_the_band_beyond_is_only_flagged() -> None:
+    land = box(10.70, 55.60, 10.80, 55.70)
+    mask = PolygonLandMask(land, near_shore_m=300.0, exclusion_m=100.0)
+
+    def south(metres: float) -> tuple[float, float]:
+        return 10.75, 55.60 - metres / 111_200
+
+    assert mask.classify(south(60)) == ShoreClass.ON_LAND  # inside the 100 m zone
+    assert mask.classify(south(150)) == ShoreClass.NEAR_SHORE
+    assert mask.classify(south(600)) == ShoreClass.OPEN_WATER
+    # without the zone the same 60 m point is just near-shore
+    assert PolygonLandMask(land, near_shore_m=300.0).classify(south(60)) == ShoreClass.NEAR_SHORE
+
+
+def test_exclusion_zone_is_removed_from_the_detection_mask_in_metres() -> None:
+    land = _lonlat_box(0, 0, 400, 200)
+    raster = make_raster(speckled_sea(SHAPE, seed=1))
+    plain = PolygonLandMask(land, near_shore_m=300.0).not_land_mask(raster)
+    zoned = PolygonLandMask(land, near_shore_m=300.0, exclusion_m=100.0).not_land_mask(raster)
+    # about 10 m per pixel: the zone removes roughly ten more columns beside the coast, nothing elsewhere
+    removed = int((plain & ~zoned)[200].sum())
+    assert 8 <= removed <= 13
+    assert not (zoned & ~plain).any()
+    assert zoned[200, 240] and zoned[200, 500]
+
+
+def test_an_exclusion_wider_than_the_band_widens_the_band() -> None:
+    land = box(10.70, 55.60, 10.80, 55.70)
+    mask = PolygonLandMask(land, near_shore_m=50.0, exclusion_m=100.0)
+    assert mask.near_shore_m == 100.0
+    assert mask.classify((10.75, 55.60 - 150 / 111_200)) == ShoreClass.OPEN_WATER
