@@ -20,31 +20,35 @@ Automated pipeline: Sentinel-1 GRD scenes of the Great Belt are ingested daily, 
 
 ## Status (2026-10-17)
 
-Steps 0 and 1 are done and merged into local `main` (not pushed). The seven stream branches (`stream/a-database`, `stream-b-fixtures`, `stream/c-algorithms`, `stream/d-api`, `stream/e-adapters`, `stream/f-dags`, `stream/g-observability`) are fully merged; their worktrees live under `.claude/worktrees/` (gitignored) and can be removed.
+Steps 0 and 1 (contracts, scaffolding, the seven streams) are merged into `main`. Step 2 (real stages) is done: all five stage handlers run end to end on the committed fixtures. CI has run on GitHub and passed.
 
-Gate on the merged tree: ruff and strict mypy clean; `uv run pytest` 302 passed, 4 live tests skipped; `dags/` 39 passed (run `uv sync && uv run pytest` inside `dags/`). CI has never run on GitHub.
+Gate: ruff and strict mypy clean; `uv run pytest` about 306 passed, 4 live tests skipped (Docker needed); `dags/` has its own project: `cd dags && uv sync && uv run pytest` (39 passed).
 
-Resolved after merge: contract changes applied (`SceneRaster.geolocate` and `bytes_downloaded`, `LandMask.not_land_mask`, half-open `pixel_box`, `ObjectStore.get` raises `FileNotFoundError`, 422 on `GET /scenes`); type stubs added and the temporary mypy pragmas removed; `discover` now sends a changing `since` (data interval start minus 2 days) with a regression test.
+## How the pieces fit
+
+- `src/pipeline/stages/real.py`: `make_registry(Services)` returns the five handlers. `stages/build.py` builds production `Services` from env (S3 keys, MinIO, `PIPELINE_LAND_POLYGONS`); `api/main.py` is the production entry point (`uvicorn --factory pipeline.api.main:app`). Tests inject fakes via `Services`.
+- Between `fetch` and `detect` the raster lives in the object store (`contracts/storage.md`: `sigma0.npy`, `geo.npz` lattice, `meta.json`); `detect` rebuilds `SceneRaster.geolocate` from the lattice, masks land with `LandMask.not_land_mask()`, then flags near-shore with `classify()`. Chips (png + npy) are written per Detection; the raster is deleted after detect when retention says so.
+- `fetch` sets `scenes.acquired_at` to the time of the Region window's centre row (catalogue start + row * azimuth interval from the annotation), because AIS matching needs the time the ships were imaged, not the scene start. Per-detection row time is not used yet (about +-5 s across the window, under 50 m for a 15 kn ship).
+- `/metrics` serves `pipeline.metrics`; DB-mirroring gauges are refreshed at scrape time; handlers and jobs record counters. `/healthz` also checks the object store in production.
 
 ## Results worth knowing
 
-- **Partial download (ADR-0004):** only the VV rows covering the Region are fetched with ranged GETs: 399 MB in 9 requests, 18 s, for the whole Great Belt window (full VV file is 883 MB). The TIFF directory (IFD) is at the END of the file, so the header read must include the tail; ADR-0004 does not say this yet.
-- **Validation works on real data:** with the fixture scene, three open-water ships each matched a real AIS vessel at 120 m, 118 m and 227 m after interpolating to the row time. A bright spot on an island is a deliberate false alarm only a land mask removes. Labels are weak: matched means near an AIS track.
-- **Live DMA AIS:** latest day was 2026-10-14 on 2026-10-17; one day is 293,752 positions, 168 vessels, loaded in 59 s.
-- **Geolocation:** one affine over the full window is off by up to 197 m; tiles of 1000 px or less give under 1.6 px. The fetcher must supply `SceneRaster.geolocate` and the Detector must use it.
-- **API:** a succeeded Job dedupes forever on (stage, input). Restarts fail interrupted Jobs as retryable (single API instance assumed). `detect` is allowed only on `fetched` Scenes (see open item 2).
-- **Airflow:** 3.3.2, deferrable operators (needs a triggerer container). `ais_load` requests day D-3 and two earlier days, and skips (stays green) when a day is unpublished.
+- **Partial download (ADR-0004):** only the VV rows covering the Region are fetched: 399 MB in 9 requests, 18 s for the whole Great Belt window (full VV file 883 MB). The TIFF directory (IFD) is at the END of the file, and real Sentinel-1 GRD TIFFs are LITTLE-endian (`II`). The first fixture was big-endian by mistake and exposed a fetcher bug (raw bytes read in the wrong order); both are fixed and covered by a test.
+- **End to end on real data:** the fixture scene (a real crop) through discover, fetch, detect, ais-load, validate matches the three known ships to their real AIS vessels (120, 118, 227 m), with the island false alarm removed by the land mask. The test uses only a tiny hand-made land polygon, so the rest of the coast produces many extra unmatched Detections (98 total); real behaviour needs the OSM land polygons.
+- **Live DMA AIS:** latest day 3 days old; one day is 293,752 positions for the Region, loaded in about 59 s (now batched with `executemany`).
+- **Geolocation:** one affine over the full window is off by up to 197 m; the pipeline uses the GCP-based `geolocate` everywhere positions matter.
+- **API:** a succeeded Job dedupes forever on (stage, input) (the `discover` DAG sends a changing `since`). Restarts fail interrupted Jobs as retryable (single API instance assumed). `detect` is allowed only on `fetched` Scenes.
+- **Airflow:** 3.3.2, deferrable operators (needs a triggerer). `ais_load` requests day D-3 and two earlier days, and skips (stays green) when a day is unpublished.
 - **Observability:** Grafana dashboards load and SQL panels work against a live stack; rate/increase panels returned no data in the short test and are unproven.
 
 ## Open items
 
 1. **Sea-level sigma0 looks high:** open water median about -12.5 dB, expected about -20 to -25 dB. Formula `DN^2 / sigma0_LUT^2` looks right; possibly a windy day. Cross-check against SNAP or another calibrated source before tuning CFAR. Thermal noise is not subtracted.
-2. **ADR-0003 vs API:** a second Detector version cannot run on a `detected` Scene via the API. Deferred until the ML layer exists.
-3. **Wire the real stages** into the API replacing the stubs, one at a time (fetch, detect, ais-load, validate), re-running the gate after each. The detect stage must use `LandMask.not_land_mask()` as `raster.water_mask`, then flag with `classify()`, and pass `geolocate` through.
-4. **Compose stack:** `pipeline-api` (`PIPELINE_DATABASE_URL`, port 8000, after migration), PostGIS (`deploy/postgis`), MinIO with bucket `sar` seeded for dev from `tests/fixtures/s3/`, `fake-sources`, Prometheus, Grafana (mounts and pinned images in `deploy/prometheus`, `deploy/grafana`), Airflow (merge `deploy/airflow/compose.yaml`, same network as `pipeline-api`). Grafana needs a login role: `CREATE ROLE grafana LOGIN PASSWORD '...' IN ROLE grafana_ro`, `GRAFANA_DB_PASSWORD`, database named `sar`. The migration job needs both `migrations/` and `contracts/`.
-5. **`.env.example`:** add `AIRFLOW_DB_PASSWORD`, `AIRFLOW_FERNET_KEY`, `AIRFLOW_JWT_SECRET`, `AIRFLOW_API_SECRET_KEY`, `GRAFANA_DB_PASSWORD`.
-6. **CI:** add the Docker-based tests and a `dags/` job; `scripts/check_schema.sh` still uses the amd64-only `postgis/postgis:16-3.4`; switch to `deploy/postgis` or replace by `tests/db`.
-7. **API wiring:** stream G metrics helpers and `render()` at `/metrics`; object-store health check in `app.state.health_checks`; feed `FetchResult.bytes_downloaded` from `SceneRaster.bytes_downloaded`.
-8. **Docs:** amend ADR-0004 (IFD at end of file) and PLAN/ADR-0001 (triggerer container).
-9. **Cleanup:** AIS CSV parsing is duplicated in `adapters/dma.py` and `algorithms/ais_dma.py`; unify. Remove merged worktrees.
-10. **Missing:** OSM land polygons loader; CFAR run on a real scene; the Great Belt polygon is a rough box.
+2. **Land polygons:** build a loader that clips OSM land polygons (osmdata.openstreetmap.de land-polygons, split 4326) to the Region and writes the GeoJSON `PIPELINE_LAND_POLYGONS` points at. Without it the production API refuses to start. Also check CFAR false alarms in open water on a real scene.
+3. **Compose stack:** `pipeline-api` (`PIPELINE_DATABASE_URL`, `PIPELINE_LAND_POLYGONS`, S3 and MinIO env, port 8000, after migration), PostGIS (`deploy/postgis`), MinIO with bucket `sar`, Prometheus, Grafana (mounts and pinned images in `deploy/prometheus`, `deploy/grafana`), Airflow (merge `deploy/airflow/compose.yaml`, same network as `pipeline-api`). Grafana needs a login role: `CREATE ROLE grafana LOGIN PASSWORD '...' IN ROLE grafana_ro`, `GRAFANA_DB_PASSWORD`, database named `sar`. The migration job needs both `migrations/` and `contracts/`.
+4. **`.env.example`:** add `AIRFLOW_DB_PASSWORD`, `AIRFLOW_FERNET_KEY`, `AIRFLOW_JWT_SECRET`, `AIRFLOW_API_SECRET_KEY`, `GRAFANA_DB_PASSWORD`, `MINIO_ENDPOINT_URL`, `PIPELINE_LAND_POLYGONS`.
+5. **CI:** add a `dags/` job (`uv sync && uv run pytest` inside it); `scripts/check_schema.sh` still uses the amd64-only `postgis/postgis:16-3.4`; switch to `deploy/postgis` or replace by `tests/db`.
+6. **ADR-0003 vs API:** a second Detector version cannot run on a `detected` Scene via the API; deferred until the ML layer exists.
+7. **Docs:** amend ADR-0004 (IFD at end, little-endian) and PLAN/ADR-0001 (triggerer container).
+8. **Cleanup:** AIS CSV parsing is duplicated in `adapters/dma.py` and `algorithms/ais_dma.py`; unify. Remove merged worktrees under `.claude/worktrees/` and the merged stream branches.
+9. **Not done:** per-Detection acquisition time for validation; ML dataset export; first real run on the Great Belt.

@@ -10,4 +10,9 @@ from pipeline.stages.real import make_registry
 
 
 def app() -> FastAPI:
-    return create_app(registry=make_registry(build_services()))
+    services = build_services()
+
+    def object_store_ping() -> None:
+        services.store.exists("healthcheck")  # raises if the store is unreachable
+
+    return create_app(registry=make_registry(services), health_checks={"object_store": object_store_ping})

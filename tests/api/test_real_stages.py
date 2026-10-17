@@ -145,3 +145,11 @@ def test_fixture_scene_through_all_five_stages(
     matched = {d["properties"]["matched_mmsi"] for d in dets if d["properties"]["label"] == "matched"}
     assert {s["mmsi"] for s in EXPECTED["ships"]} <= matched
     assert api.scene(SCENE_ID)["status"] == "validated"
+
+    body = api.client.get("/v1/metrics").text
+    assert 'sar_scenes{region_id="great-belt",status="validated"} 1.0' in body
+    assert 'sar_jobs_total{stage="detect",status="succeeded"}' in body
+    assert "sar_detections_total{" in body and "sar_validations_total{" in body
+    assert 'sar_ais_positions_loaded_total{region_id="great-belt"}' in body
+    assert 'sar_bytes_downloaded_total{source="cdse"}' in body
+    assert 'sar_source_requests_total{outcome="ok",source="dma"}' in body

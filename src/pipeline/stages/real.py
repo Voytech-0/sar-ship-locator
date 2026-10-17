@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -29,7 +30,7 @@ from contracts.protocols import (
     ShoreClass,
     Validator,
 )
-from pipeline import db
+from pipeline import db, metrics
 from pipeline.api.config import RegionConfig
 from pipeline.api.models import (
     AisLoadRequest,
@@ -52,6 +53,17 @@ log = logging.getLogger(__name__)
 AIS_BATCH = 20_000
 
 
+@contextmanager
+def _source(name: str) -> Iterator[None]:
+    """Count a call to an external data source as ok or error."""
+    try:
+        yield
+    except Exception:
+        metrics.observe_source_request(name, "error")
+        raise
+    metrics.observe_source_request(name, "ok")
+
+
 @dataclass(frozen=True)
 class Services:
     catalogue: CatalogueClient
@@ -71,12 +83,14 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
     def discover(ctx: StageContext, request: DiscoverRequest) -> DiscoverResult:
         cfg = ctx.config.regions[request.region_id]
         since = request.since or datetime.now(UTC) - timedelta(days=cfg.discovery.lookback_days)
-        refs = services.catalogue.search(to_region(cfg), since)
+        with _source("cdse"):
+            refs = services.catalogue.search(to_region(cfg), since)
         new: list[str] = []
         with ctx.db.connection() as conn:
             for ref in refs:
                 if db.insert_scene(conn, ref.scene_id, cfg.region_id, ref.acquired_at, ref.footprint):
                     new.append(ref.scene_id)
+        metrics.scenes_discovered(cfg.region_id, len(new))
         return DiscoverResult(new_scene_ids=new, known_scene_count=len(refs) - len(new))
 
     def fetch(ctx: StageContext, request: SceneStageRequest) -> FetchResult:
@@ -85,7 +99,11 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
             row = db.get_scene(conn, request.scene_id)
         assert row is not None
         ring = [(float(x), float(y)) for x, y in row["footprint"]["coordinates"][0]]
-        raster = services.fetcher.fetch(SceneRef(request.scene_id, row["acquired_at"], ring), to_region(cfg))
+        with _source("cdse"):
+            raster = services.fetcher.fetch(
+                SceneRef(request.scene_id, row["acquired_at"], ring), to_region(cfg)
+            )
+        metrics.bytes_downloaded("cdse", raster.bytes_downloaded)
         key = save_raster(services.store, raster)
         with ctx.db.connection() as conn:  # the Region data's own time, used for AIS matching
             db.set_scene_acquired_at(conn, request.scene_id, raster.acquired_at)
@@ -140,6 +158,11 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
             db.set_chip_keys(conn, chip_keys)
         if cfg.retention.delete_raster_after_detect:
             delete_raster(services.store, request.scene_id)
+        for shore_name in ("open_water", "near_shore"):
+            n = sum(1 for _, s in kept if s.value == shore_name)
+            if n:
+                metrics.detections_written(cfg.region_id, detector.name, shore_name, n)
+        metrics.detections_dropped_on_land(cfg.region_id, detector.name, dropped)
         return DetectResult(
             detection_count=len(ids),
             dropped_on_land=dropped,
@@ -151,8 +174,8 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
         cfg = ctx.config.regions[request.region_id]
         loaded = 0
         batch: list[dict[str, Any]] = []
-        with ctx.db.connection() as conn:
-            for p in services.ais_source.positions(request.date, to_region(cfg)):
+        with _source("dma"), ctx.db.connection() as conn:
+            for p in services.ais_source.positions(request.date, to_region(cfg)):  # errors counted below
                 batch.append(
                     {
                         "mmsi": p.mmsi,
@@ -168,6 +191,7 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
                     loaded += db.insert_ais_positions(conn, batch)
                     batch = []
             loaded += db.insert_ais_positions(conn, batch)
+        metrics.ais_positions_loaded(cfg.region_id, loaded)
         return AisLoadResult(positions_loaded=loaded)
 
     def validate(ctx: StageContext, request: SceneStageRequest) -> ValidateResult:
@@ -202,6 +226,9 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
                     cfg.validation.gate_m,
                 )
                 counts[r.label.value] += 1
+        for label, n in counts.items():
+            if n:
+                metrics.validations_recorded(cfg.region_id, label, n)
         return ValidateResult(**counts)
 
     return {

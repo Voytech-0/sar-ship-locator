@@ -347,6 +347,27 @@ def list_detection_points(conn: Conn, scene_id: str) -> list[Row]:
     ).fetchall()
 
 
+def scene_status_counts(conn: Conn) -> list[Row]:
+    return conn.execute(
+        "SELECT region_id, status::text AS status, count(*)::int AS n FROM scenes GROUP BY 1, 2"
+    ).fetchall()
+
+
+def jobs_in_flight_counts(conn: Conn) -> list[Row]:
+    return conn.execute(
+        "SELECT stage::text AS stage, count(*)::int AS n FROM jobs "
+        "WHERE status IN ('queued', 'running') GROUP BY 1"
+    ).fetchall()
+
+
+def last_scene_acquired(conn: Conn) -> list[Row]:
+    return conn.execute("SELECT region_id, max(acquired_at) AS t FROM scenes GROUP BY 1").fetchall()
+
+
+def latest_ais_day(conn: Conn) -> list[Row]:
+    return conn.execute("SELECT region_id, max(day) AS d FROM ais_loaded_days GROUP BY 1").fetchall()
+
+
 def set_chip_keys(conn: Conn, chip_keys: dict[str, str]) -> None:
     for detection_id, key in chip_keys.items():
         conn.execute("UPDATE detections SET chip_key = %s WHERE id = %s::uuid", (key, detection_id))

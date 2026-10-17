@@ -9,16 +9,16 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import Any
 
 import psycopg
 from fastapi import APIRouter, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from pipeline import db, jobs
+from pipeline import db, jobs, metrics
 from pipeline.api.config import AppConfig, Settings, load_app_config
 from pipeline.api.models import (
     AisLoadRequest,
@@ -192,11 +192,34 @@ def build_router() -> APIRouter:
         return JSONResponse({"status": "ok"})
 
     @router.get("/metrics")
-    def metrics() -> Response:
-        # Stream G owns pipeline.metrics; until then this serves whatever is in the default registry.
-        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    def metrics_endpoint(request: Request) -> Response:
+        try:
+            _refresh_gauges(request.app.state.db, request.app.state.config)
+        except psycopg.Error:
+            log.warning("could not refresh gauges from the database", exc_info=True)
+        return Response(metrics.render(), media_type=metrics.CONTENT_TYPE)
 
     return router
+
+
+def _refresh_gauges(database: Database, config: AppConfig) -> None:
+    """Gauges that mirror database state are set at scrape time, so they are always current."""
+    now = datetime.now(UTC)
+    with database.connection() as conn:
+        counts: dict[str, dict[str, int]] = {rid: {} for rid in config.regions}
+        for row in db.scene_status_counts(conn):
+            counts.setdefault(row["region_id"], {})[row["status"]] = row["n"]
+        in_flight = {row["stage"]: row["n"] for row in db.jobs_in_flight_counts(conn)}
+        newest = {row["region_id"]: row["t"] for row in db.last_scene_acquired(conn)}
+        ais_day = {row["region_id"]: row["d"] for row in db.latest_ais_day(conn)}
+    for region_id, by_status in counts.items():
+        metrics.set_scene_counts(region_id, by_status)
+        if region_id in newest:
+            metrics.set_last_scene_acquired(region_id, newest[region_id].timestamp())
+        if region_id in ais_day:
+            metrics.set_ais_lag(region_id, float((now.date() - ais_day[region_id]).days))
+    for stage in metrics.STAGES:
+        metrics.set_jobs_in_flight(stage, in_flight.get(stage, 0))
 
 
 def create_app(
@@ -204,6 +227,7 @@ def create_app(
     *,
     registry: Registry | None = None,
     start_workers: bool = True,
+    health_checks: Mapping[str, Callable[[], None]] | None = None,
 ) -> FastAPI:
     """Build the service. `registry` overrides stage handlers (default: stubs); `start_workers=False`
     leaves Jobs queued so tests can drive them with `app.state.runner.run_pending()`."""
@@ -226,8 +250,7 @@ def create_app(
         app.state.db = database
         app.state.config = config
         app.state.runner = runner
-        # Add further dependency checks here (e.g. the object store) as those components land.
-        app.state.health_checks = {"database": database.ping}
+        app.state.health_checks = {"database": database.ping, **(health_checks or {})}
         if start_workers:
             runner.start()
         else:

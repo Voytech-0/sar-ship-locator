@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections.abc import Iterator
 from typing import Any
 
@@ -20,7 +21,7 @@ import psycopg
 from pydantic import BaseModel
 
 from contracts.protocols import PermanentError, TransientError
-from pipeline import db
+from pipeline import db, metrics
 from pipeline.api.config import AppConfig
 from pipeline.api.models import (
     AisLoadRequest,
@@ -213,6 +214,7 @@ class JobRunner:
 
     def _execute(self, job: Row) -> None:
         stage = Stage(job["stage"])
+        started = time.monotonic()
         try:
             request = REQUEST_MODELS[stage].model_validate(job["input"])
             scene_id: str | None = getattr(request, "scene_id", None)
@@ -226,7 +228,9 @@ class JobRunner:
                     f"expected {RESULT_MODELS[stage].__name__}"
                 )
             self._succeed(job, stage, request, result)
+            metrics.record_job_finished(stage.value, "succeeded", time.monotonic() - started)
         except Exception as exc:
+            metrics.record_job_finished(stage.value, "failed", time.monotonic() - started)
             log.warning("job %s (%s) failed: %s", job["id"], stage.value, _error_text(exc))
             # A stale Job (Scene moved on since submit) must not clobber the Scene's current status.
             self._fail(
