@@ -1,4 +1,3 @@
-# mypy: disable-error-code="import-untyped"
 """Streaming parser for the Danish Maritime Authority's daily AIS archives (`aisdk-YYYY-MM-DD.zip`).
 
 The archive holds one CSV per day. It is read row by row (a day is several GB uncompressed), rows outside the

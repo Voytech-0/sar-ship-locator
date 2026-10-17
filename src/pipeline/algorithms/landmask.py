@@ -1,4 +1,3 @@
-# mypy: disable-error-code="import-untyped"
 """Land mask backed by land polygons (any shapely geometries; OSM land polygons are loaded elsewhere).
 
 Two views of the same polygons:

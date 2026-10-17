@@ -36,6 +36,9 @@ dev = [
     "testcontainers[postgres]>=4.9",
     "types-jsonschema",
     "types-pyyaml",
+    "types-shapely>=2.1.0.20260728",
+    "scipy-stubs>=1.18.1.1",
+    "boto3-stubs>=1.43.114",
 ]
 
 [build-system]

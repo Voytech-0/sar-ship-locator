@@ -1,4 +1,3 @@
-# mypy: disable-error-code="import-untyped"
 """Validation of Detections against AIS Positions at the Scene's acquisition time.
 
 Each AIS track (one per MMSI) is brought to the acquisition time:
@@ -24,6 +23,7 @@ import math
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from datetime import datetime
+from typing import cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -68,7 +68,7 @@ class NearestNeighbourValidator:
         if mmsis:
             trk_xy = project(np.array([tracks[m] for m in mmsis], dtype=np.float64))
             tree = cKDTree(trk_xy)
-            for i, near in enumerate(tree.query_ball_point(det_xy, r=gate_m)):
+            for i, near in enumerate(cast(list[list[int]], tree.query_ball_point(det_xy, r=gate_m))):
                 for j in near:
                     dist = float(np.hypot(*(trk_xy[j] - det_xy[i])))
                     candidates[i].append((dist, int(j)))

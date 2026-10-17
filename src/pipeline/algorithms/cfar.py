@@ -1,4 +1,3 @@
-# mypy: disable-error-code="import-untyped"
 """Cell-averaging CFAR ship detector for Sentinel-1 sigma0 rasters.
 
 For every valid pixel the background level is the mean of valid pixels in a square ring (guard window
@@ -166,9 +165,10 @@ class CaCfarDetector:
         pairs = cKDTree(pts).query_pairs(r=self.merge_distance_px, p=np.inf, output_type="ndarray")
         if pairs.size:
             graph = coo_matrix((np.ones(len(pairs), dtype=np.int8), (pairs[:, 0], pairs[:, 1])), shape=(n, n))
-            n_comp, labels = connected_components(graph, directed=False)
+            n_comp, labels_raw = connected_components(graph, directed=False)
+            labels = labels_raw.astype(np.intp)
         else:
-            n_comp, labels = n, np.arange(n)
+            n_comp, labels = n, np.arange(n, dtype=np.intp)
         counts = np.bincount(labels, minlength=n_comp)
         keep_label = counts >= self.min_cluster_pixels
         if not keep_label.any():
@@ -176,7 +176,7 @@ class CaCfarDetector:
 
         sel = keep_label[labels]
         rows, cols, vals, ratio, labels = rows[sel], cols[sel], vals[sel], ratio[sel], labels[sel]
-        _, labels = np.unique(labels, return_inverse=True)  # compact to 0..k-1
+        labels = np.unique(labels, return_inverse=True)[1].astype(np.intp)  # compact to 0..k-1
         k = int(labels.max()) + 1
         fcounts = np.bincount(labels, minlength=k).astype(np.float64)
 

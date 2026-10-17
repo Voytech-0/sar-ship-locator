@@ -63,7 +63,7 @@ class SceneRaster:
     acquired_at: datetime
     sigma0_vv: NDArray[np.float32]  # linear sigma0, shape (rows, cols); NaN outside the Region
     transform: tuple[float, float, float, float, float, float]  # affine (a, b, c, d, e, f), pixel -> lon/lat
-    water_mask: NDArray[np.bool_] | None = None  # True = pixel the Detector may use (not land); set by the stage
+    water_mask: NDArray[np.bool_] | None = None  # True = Detector may use pixel (not land); set by stage
     # Accurate pixel -> lon/lat mapping (e.g. GCP interpolation). `transform` is only a coarse approximation
     # for a Sentinel-1 window (up to ~200 m off); Detectors must report positions via `geolocate` when set.
     # None means `transform` is exact (synthetic rasters, tests).

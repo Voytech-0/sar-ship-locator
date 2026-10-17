@@ -57,6 +57,6 @@ class FlakyClient:
 
 def client_error(status: int, code: str) -> ClientError:
     return ClientError(
-        {"Error": {"Code": code, "Message": code}, "ResponseMetadata": {"HTTPStatusCode": status}},
+        {"Error": {"Code": code, "Message": code}, "ResponseMetadata": {"HTTPStatusCode": status}},  # type: ignore[typeddict-item]
         "GetObject",
     )

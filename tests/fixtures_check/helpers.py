@@ -13,8 +13,8 @@ from typing import Any
 import numpy as np
 import tifffile
 from numpy.typing import NDArray
-from scipy import ndimage  # type: ignore[import-untyped]
-from scipy.interpolate import RegularGridInterpolator  # type: ignore[import-untyped]
+from scipy import ndimage
+from scipy.interpolate import RegularGridInterpolator
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
