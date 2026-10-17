@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import tifffile
@@ -56,6 +56,7 @@ def make_tiff(
     *,
     compression: str | None = None,
     tile: tuple[int, int] | None = None,
+    byteorder: Literal["<", ">"] = "<",
 ) -> bytes:
     buf = io.BytesIO()
     pts = tiepoints(mapping)
@@ -65,6 +66,7 @@ def make_tiff(
         dn,
         photometric="minisblack",
         compression=compression,
+        byteorder=byteorder,
         extratags=[(33922, 12, len(pts), pts, True)],  # ModelTiepointTag, TIFF type 12 = DOUBLE
         **kwargs,
     )

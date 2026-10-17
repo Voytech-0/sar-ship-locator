@@ -19,7 +19,7 @@ s3/eodata/Sentinel-1/SAR/IW_GRDH_1S/2026/10/14/<scene>.SAFE/
 
 Faithfulness to the real product, checked by `tests/fixtures_check`:
 
-- uint16 DN, big-endian, uncompressed, **one row per strip, strips contiguous**
+- uint16 DN, little-endian (`II`, as the real file), uncompressed, **one row per strip, strips contiguous**
 - **IFD at the end of the file** (as in the real file; a header-only read does not find it, ADR-0004 fetchers must read the tail)
 - no CRS or pixel scale; geolocation is only the 20 GCPs in `ModelTiepointTag` (`I, J, 0, lon, lat, 0`)
 - the GCPs were bilinearly resampled from the real 10 x 21 lattice onto the crop, so positions agree with the real product up to the interpolation error

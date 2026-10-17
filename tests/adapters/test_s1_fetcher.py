@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pytest
@@ -101,6 +101,18 @@ def test_only_needed_rows_are_downloaded(s3: Any, product: bytes, fast_retry: Re
         n for n in spans if n % (synth.WIDTH * 2) == 0
     ]  # header blocks are 4096 bytes, not whole rows
     assert len(row_reads) == -(-(r1 - r0) // 60)  # 60 rows (60 kB) per ranged GET
+
+
+def test_big_endian_product_gives_the_same_sigma0(s3: Any, fast_retry: RetryPolicy) -> None:
+    """Real Sentinel-1 files are little-endian, but the fast path must follow the file's byte order."""
+    results = []
+    orders: list[Literal["<", ">"]] = ["<", ">"]
+    for order in orders:
+        synth.upload_product(s3, synth.make_tiff(synth.make_dn(), byteorder=order))
+        f = fetcher(s3, fast_retry)
+        results.append(f.fetch(scene(), region()).sigma0_vv)
+        assert f.last_diagnostics is not None and f.last_diagnostics.mode == "row-range"
+    assert np.array_equal(results[0], results[1], equal_nan=True)
 
 
 def test_truncated_read_is_retried(s3: Any, product: bytes, fast_retry: RetryPolicy) -> None:

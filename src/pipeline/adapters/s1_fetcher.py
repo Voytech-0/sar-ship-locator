@@ -13,9 +13,11 @@ import struct
 import tempfile
 import threading
 import time
+import xml.etree.ElementTree as ET
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, BinaryIO, Literal, cast
 
@@ -185,7 +187,7 @@ class Sentinel1S3Fetcher:
 
         return SceneRaster(
             scene_id=scene.scene_id,
-            acquired_at=scene.acquired_at,
+            acquired_at=self._window_time(scene, prefix, (r0 + r1) / 2),
             sigma0_vv=sigma0,
             transform=fit.transform,
             geolocate=geolocate,
@@ -193,6 +195,27 @@ class Sentinel1S3Fetcher:
         )
 
     # ----------------------------------------------------------------- helpers
+
+    def _window_time(self, scene: SceneRef, prefix: str, centre_row: float) -> Any:
+        """Acquisition time of the window's centre row: catalogue start plus rows * azimuth time interval.
+
+        The catalogue time is the start of a ~25 s acquisition, so using it directly would misplace ships
+        by up to 25 s of motion when matching against AIS. Falls back to the catalogue time if the
+        annotation is missing or lacks the interval.
+        """
+        try:
+            key = self._find_key(
+                prefix + "annotation/",
+                lambda n: n.startswith("s1") and "-vv-" in n and n.endswith(".xml"),
+                "VV annotation",
+            )
+            node = ET.fromstring(self._get_object(key)).find(".//azimuthTimeInterval")
+            if node is None or not node.text:
+                raise ValueError("no azimuthTimeInterval")
+            return scene.acquired_at + timedelta(seconds=centre_row * float(node.text))
+        except (PermanentError, ValueError, ET.ParseError) as exc:
+            log.warning("%s: using the catalogue acquisition time (%s)", scene.scene_id, exc)
+            return scene.acquired_at
 
     def _count(self, nbytes: int, requests: int) -> None:
         with self._lock:
@@ -267,12 +290,15 @@ class Sentinel1S3Fetcher:
                 and page.planarconfig == tifffile.PLANARCONFIG.CONTIG
                 and page.samplesperpixel == 1
                 and page.rowsperstrip == 1
-                and page.dtype == np.dtype("<u2")
+                and page.dtype.kind == "u"
+                and page.dtype.itemsize == 2
                 and len(offsets) == height
                 and all(c == width * itemsize for c in counts)
                 and all(offsets[i + 1] == offsets[i] + counts[i] for i in range(len(offsets) - 1))
             )
-            layout = _Layout(height, width, page.dtype, offsets, counts, fast)
+            # tifffile reports a native-order dtype; the raw strip bytes follow the file's byte order
+            raw_dtype = np.dtype(f"{tif.byteorder}u2") if itemsize == 2 else page.dtype
+            layout = _Layout(height, width, raw_dtype, offsets, counts, fast)
         return layout, GcpGrid(np.asarray(tiepoints, dtype=np.float64))
 
     def _read_rows(self, key: str, lay: _Layout, r0: int, r1: int, c0: int, c1: int) -> NDArray[np.uint16]:

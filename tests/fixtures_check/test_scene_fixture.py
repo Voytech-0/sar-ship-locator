@@ -30,7 +30,7 @@ def test_tiff_mimics_real_grd_layout() -> None:
         assert 33922 in page.tags  # GCP tiepoints
         assert 33550 not in page.tags  # no pixel scale: geolocation is by GCPs only, like the real file
     data = tiff_path().read_bytes()
-    assert data[:2] == b"MM"  # big-endian, as the real product
+    assert data[:2] == b"II"  # little-endian, as the real product (checked against its header)
     (ifd_offset,) = struct.unpack(">I", data[4:8])
     assert ifd_offset > len(data) - 4096, "IFD must sit at the end of the file, as in the real product"
 

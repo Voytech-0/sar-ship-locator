@@ -183,6 +183,10 @@ def mark_scene_done(conn: Conn, scene_id: str, status: str, raster_key: str | No
     )
 
 
+def set_scene_acquired_at(conn: Conn, scene_id: str, acquired_at: datetime) -> None:
+    conn.execute("UPDATE scenes SET acquired_at = %s WHERE scene_id = %s", (acquired_at, scene_id))
+
+
 def mark_scene_failed(conn: Conn, scene_id: str, stage: str, error: str) -> None:
     conn.execute(
         """
@@ -296,14 +300,16 @@ def insert_ais_positions(conn: Conn, positions: Sequence[Row]) -> int:
 
     Returns the number of new rows (existing (mmsi, ts) pairs are skipped).
     """
-    inserted = 0
-    for p in positions:
-        cur = conn.execute(
-            """
-            INSERT INTO ais_positions (mmsi, ts, geom, sog_knots, cog_deg, heading)
-            VALUES (%s, %s, ST_SetSRID(ST_MakePoint(%s, %s), 4326), %s, %s, %s)
-            ON CONFLICT (mmsi, ts) DO NOTHING
-            """,
+    if not positions:
+        return 0
+    cur = conn.cursor()
+    cur.executemany(
+        """
+        INSERT INTO ais_positions (mmsi, ts, geom, sog_knots, cog_deg, heading)
+        VALUES (%s, %s, ST_SetSRID(ST_MakePoint(%s, %s), 4326), %s, %s, %s)
+        ON CONFLICT (mmsi, ts) DO NOTHING
+        """,
+        [
             (
                 p["mmsi"],
                 p["ts"],
@@ -312,10 +318,38 @@ def insert_ais_positions(conn: Conn, positions: Sequence[Row]) -> int:
                 p.get("sog_knots"),
                 p.get("cog_deg"),
                 p.get("heading"),
-            ),
-        )
-        inserted += cur.rowcount
-    return inserted
+            )
+            for p in positions
+        ],
+    )
+    return cur.rowcount
+
+
+def list_ais_positions(conn: Conn, start: datetime, end: datetime) -> list[Row]:
+    """AIS Positions with `start <= ts <= end`: mmsi, ts, lon, lat, sog_knots, cog_deg, heading."""
+    return conn.execute(
+        """
+        SELECT mmsi, ts, ST_X(geom) AS lon, ST_Y(geom) AS lat, sog_knots, cog_deg, heading
+        FROM ais_positions WHERE ts BETWEEN %s AND %s ORDER BY mmsi, ts
+        """,
+        (start, end),
+    ).fetchall()
+
+
+def list_detection_points(conn: Conn, scene_id: str) -> list[Row]:
+    """Every Detection of a Scene (all Detector versions): `id`, `lon`, `lat`, `length_m`."""
+    return conn.execute(
+        """
+        SELECT id::text AS id, ST_X(geom) AS lon, ST_Y(geom) AS lat, length_m
+        FROM detections WHERE scene_id = %s ORDER BY created_at, id
+        """,
+        (scene_id,),
+    ).fetchall()
+
+
+def set_chip_keys(conn: Conn, chip_keys: dict[str, str]) -> None:
+    for detection_id, key in chip_keys.items():
+        conn.execute("UPDATE detections SET chip_key = %s WHERE id = %s::uuid", (key, detection_id))
 
 
 def mark_ais_day_loaded(conn: Conn, region_id: str, day: date, positions: int) -> None:
