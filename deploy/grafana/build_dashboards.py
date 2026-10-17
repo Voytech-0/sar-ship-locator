@@ -49,6 +49,7 @@ def sql_panel(
     grid: dict[str, int],
     fmt: str = "time_series",
     options: dict[str, Any] | None = None,
+    defaults: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     panel: dict[str, Any] = {
         "id": pid,
@@ -56,7 +57,7 @@ def sql_panel(
         "type": kind,
         "datasource": PG,
         "gridPos": grid,
-        "fieldConfig": {"defaults": {}, "overrides": []},
+        "fieldConfig": {"defaults": defaults or {}, "overrides": []},
         "targets": [
             {
                 "refId": "A",
@@ -209,6 +210,7 @@ GROUP BY v.label"""
 RECENT_DETECTIONS = """\
 SELECT ST_Y(d.geom) AS latitude, ST_X(d.geom) AS longitude,
        COALESCE(v.label::text, 'unvalidated') AS label,
+       CASE v.label WHEN 'unmatched' THEN 0 WHEN 'matched' THEN 1 WHEN 'ambiguous' THEN 2 ELSE 3 END AS class,
        d.confidence, d.length_m, d.shore::text AS shore, s.acquired_at
 FROM detections d
 JOIN scenes s ON s.scene_id = d.scene_id
@@ -217,9 +219,34 @@ WHERE $__timeFilter(s.acquired_at)
 ORDER BY s.acquired_at DESC
 LIMIT 5000"""
 
+# Marker colour by validation outcome: the `class` column (0 unmatched, 1 matched, 2 ambiguous, 3 none).
+LABEL_COLOURS = [
+    ("unmatched", "orange"),
+    ("matched", "green"),
+    ("ambiguous", "yellow"),
+    ("unvalidated", "gray"),
+]
+LABEL_FIELD_DEFAULTS = {
+    "color": {"mode": "thresholds"},
+    "thresholds": {
+        "mode": "absolute",
+        "steps": [{"color": c, "value": None if i == 0 else i} for i, (_, c) in enumerate(LABEL_COLOURS)],
+    },
+    "mappings": [
+        {
+            "type": "value",
+            "options": {
+                str(i): {"text": name, "color": c, "index": i} for i, (name, c) in enumerate(LABEL_COLOURS)
+            },
+        }
+    ],
+}
+
 GEOMAP_OPTIONS = {
     "view": {"id": "coords", "lat": 55.35, "lon": 11.0, "zoom": 8},
-    "basemap": {"type": "default"},
+    # OpenStreetMap needs no key. Grafana's "default" basemap is CARTO, which now serves watermarked
+    # "API KEY REQUIRED" tiles without one.
+    "basemap": {"type": "osm-standard"},
     "layers": [
         {
             "type": "markers",
@@ -227,7 +254,7 @@ GEOMAP_OPTIONS = {
             "config": {
                 "style": {
                     "size": {"fixed": 5},
-                    "color": {"field": "label", "fixed": "blue"},
+                    "color": {"field": "class", "fixed": "blue"},
                     "opacity": 0.8,
                 }
             },
@@ -287,6 +314,7 @@ def detections() -> dict[str, Any]:
                 _grid(8, 8, 16, 14),
                 fmt="table",
                 options=GEOMAP_OPTIONS,
+                defaults=LABEL_FIELD_DEFAULTS,
             ),
             sql_panel(
                 5,

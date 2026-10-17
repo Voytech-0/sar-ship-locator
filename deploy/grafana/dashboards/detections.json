@@ -125,7 +125,59 @@
         "h": 14
       },
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              },
+              {
+                "color": "yellow",
+                "value": 2
+              },
+              {
+                "color": "gray",
+                "value": 3
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "unmatched",
+                  "color": "orange",
+                  "index": 0
+                },
+                "1": {
+                  "text": "matched",
+                  "color": "green",
+                  "index": 1
+                },
+                "2": {
+                  "text": "ambiguous",
+                  "color": "yellow",
+                  "index": 2
+                },
+                "3": {
+                  "text": "unvalidated",
+                  "color": "gray",
+                  "index": 3
+                }
+              }
+            }
+          ]
+        },
         "overrides": []
       },
       "targets": [
@@ -138,7 +190,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ST_Y(d.geom) AS latitude, ST_X(d.geom) AS longitude,\n       COALESCE(v.label::text, 'unvalidated') AS label,\n       d.confidence, d.length_m, d.shore::text AS shore, s.acquired_at\nFROM detections d\nJOIN scenes s ON s.scene_id = d.scene_id\nLEFT JOIN validations v ON v.detection_id = d.id\nWHERE $__timeFilter(s.acquired_at)\nORDER BY s.acquired_at DESC\nLIMIT 5000"
+          "rawSql": "SELECT ST_Y(d.geom) AS latitude, ST_X(d.geom) AS longitude,\n       COALESCE(v.label::text, 'unvalidated') AS label,\n       CASE v.label WHEN 'unmatched' THEN 0 WHEN 'matched' THEN 1 WHEN 'ambiguous' THEN 2 ELSE 3 END AS class,\n       d.confidence, d.length_m, d.shore::text AS shore, s.acquired_at\nFROM detections d\nJOIN scenes s ON s.scene_id = d.scene_id\nLEFT JOIN validations v ON v.detection_id = d.id\nWHERE $__timeFilter(s.acquired_at)\nORDER BY s.acquired_at DESC\nLIMIT 5000"
         }
       ],
       "options": {
@@ -149,7 +201,7 @@
           "zoom": 8
         },
         "basemap": {
-          "type": "default"
+          "type": "osm-standard"
         },
         "layers": [
           {
@@ -161,7 +213,7 @@
                   "fixed": 5
                 },
                 "color": {
-                  "field": "label",
+                  "field": "class",
                   "fixed": "blue"
                 },
                 "opacity": 0.8
@@ -216,7 +268,7 @@
           "zoom": 8
         },
         "basemap": {
-          "type": "default"
+          "type": "osm-standard"
         },
         "layers": [
           {
