@@ -35,6 +35,10 @@ Airflow only orchestrates; pipeline-api runs every stage as an async job ┘   P
 - Only the rows of the VV band covering the Region are downloaded, about 400 MB of an 883 MB file (ADR-0004).
 - Bridges, wind turbines and offshore platforms are masked like land; without that they were a third of the false alarms. Unmatched, confident, ship-sized open-water Detections appear in the `dark_ship_candidates` view (candidates only, not proof).
 
+## Training data
+
+Every validated Detection keeps its Chip and an AIS-derived label. `docker compose run --rm pipeline-api python -m pipeline.dataset v1` exports an immutable, versioned dataset (manifest plus a `chips.npz` bundle). The labels are weak (an AIS match means a ship was there; no match means unknown), and examples are split by scene so near-identical neighbouring chips never leak between train and test.
+
 ## Where to look
 
 - `GLOSSARY.md`: the project vocabulary (Region, Scene, Detection, ...).

@@ -9,7 +9,8 @@ One bucket in the S3-compatible object store, `sar`. All keys are relative to it
 | `scenes/{scene_id}/meta.json` | `fetch` | Scene id, acquisition time of the window's centre row, shape, coarse affine, bytes downloaded |
 | `chips/{scene_id}/{detection_id}.png` | `detect` | Chip: 64x64 px cutout around a Detection, 8-bit, contrast-stretched for review |
 | `chips/{scene_id}/{detection_id}.npy` | `detect` | Same Chip as float32 calibrated values, for training |
-| `datasets/{version}/manifest.json` | export command | Dataset manifest: list of Chip keys with labels and provenance |
+| `datasets/{version}/manifest.json` | `python -m pipeline.dataset` | Dataset manifest: every example with label, split, position, detector, AIS match and Chip keys, plus counts and the weak-label caveat. Written last, so its presence marks a complete dataset |
+| `datasets/{version}/chips.npz` | `python -m pipeline.dataset` | Training bundle: `chips` (N x 64 x 64 float32), `target` (1 matched, 0 unmatched, -1 ambiguous), `split`, `detection_id`; rows line up with the manifest |
 
 ## Rules
 
