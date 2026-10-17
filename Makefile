@@ -1,4 +1,4 @@
-.PHONY: install lint fmt typecheck test check-contracts check-schema ci
+.PHONY: install lint fmt typecheck test check-contracts check-schema ci land
 
 install:
 	uv sync
@@ -25,3 +25,7 @@ check-schema:
 	scripts/check_schema.sh
 
 ci: lint typecheck test check-schema
+
+# Builds data/land/great-belt.geojson from OSM land polygons (downloads ~0.9 GB once; needs the `land` extra).
+land:
+	uv run --extra land python -m pipeline.landpolygons --region contracts/region.greatbelt.yaml --out data/land/great-belt.geojson

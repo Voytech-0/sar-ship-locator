@@ -21,6 +21,11 @@ dependencies = [
     "uvicorn>=0.32",
 ]
 
+[project.optional-dependencies]
+land = [
+    "pyogrio>=0.10",
+]
+
 [dependency-groups]
 dev = [
     "jsonschema>=4.23",
@@ -39,6 +44,7 @@ dev = [
     "types-shapely>=2.1.0.20260728",
     "scipy-stubs>=1.18.1.1",
     "boto3-stubs>=1.43.114",
+    "pyogrio>=0.10",
 ]
 
 [build-system]
