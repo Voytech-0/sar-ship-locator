@@ -1,0 +1,284 @@
+{
+  "scene_id": "S1D_IW_GRDH_1SDV_20261014T053204_20261014T053229_005007_009759_0CC6",
+  "product_id": "0eb3f379-e4cf-4094-8eff-0dc3c8fd6329",
+  "acquired_at": "2026-10-14T05:32:24.577434Z",
+  "last_line_at": "2026-10-14T05:32:26.901071Z",
+  "azimuth_time_interval_s": 0.001500088040161928,
+  "footprint": [
+    [
+      11.262212497525214,
+      55.31241307669936
+    ],
+    [
+      11.014380240692091,
+      55.338018598405185
+    ],
+    [
+      10.970050060552964,
+      55.19922940248858
+    ],
+    [
+      11.217205656505406,
+      55.17363030841745
+    ],
+    [
+      11.262212497525214,
+      55.31241307669936
+    ]
+  ],
+  "width": 1600,
+  "height": 1550,
+  "origin_in_real_scene": {
+    "row": 13450,
+    "col": 11700
+  },
+  "real_scene_size": {
+    "width": 26475,
+    "height": 16665
+  },
+  "gcps": [
+    {
+      "line": 0,
+      "pixel": 0,
+      "slantRangeTime": 0.0057761766863142,
+      "latitude": 55.31241307669936,
+      "longitude": 11.262212497525214,
+      "height": 10.22377344205275,
+      "incidenceAngle": 37.762905943012974,
+      "elevationAngle": 33.46066219356627
+    },
+    {
+      "line": 0,
+      "pixel": 400,
+      "slantRangeTime": 0.005792566276579634,
+      "latitude": 55.31886071998574,
+      "longitude": 11.200280781485498,
+      "height": 7.942645383680949,
+      "incidenceAngle": 38.00730129585459,
+      "elevationAngle": 33.669069430161144
+    },
+    {
+      "line": 0,
+      "pixel": 800,
+      "slantRangeTime": 0.005809116305158231,
+      "latitude": 55.32525141776189,
+      "longitude": 11.1383218383364,
+      "height": 5.155812891386028,
+      "incidenceAngle": 38.24934992545177,
+      "elevationAngle": 33.87513494170251
+    },
+    {
+      "line": 0,
+      "pixel": 1200,
+      "slantRangeTime": 0.005825666333736828,
+      "latitude": 55.33164211553805,
+      "longitude": 11.076362895187303,
+      "height": 2.3689803990911056,
+      "incidenceAngle": 38.49139855504895,
+      "elevationAngle": 34.08120045324387
+    },
+    {
+      "line": 0,
+      "pixel": 1599,
+      "slantRangeTime": 0.005842217578706871,
+      "latitude": 55.338002858575884,
+      "longitude": 11.014535533239066,
+      "height": 0.29091938510966225,
+      "incidenceAngle": 38.73230352853242,
+      "elevationAngle": 34.28620434382089
+    },
+    {
+      "line": 517,
+      "pixel": 0,
+      "slantRangeTime": 0.005776192140661734,
+      "latitude": 55.26612016332427,
+      "longitude": 11.247195220267804,
+      "height": 4.680047573709214,
+      "incidenceAngle": 37.76363990614791,
+      "elevationAngle": 33.461317279690114
+    },
+    {
+      "line": 517,
+      "pixel": 400,
+      "slantRangeTime": 0.005792582211997956,
+      "latitude": 55.272568455600016,
+      "longitude": 11.18530820424841,
+      "height": 3.713984142849989,
+      "incidenceAngle": 38.008191522021626,
+      "elevationAngle": 33.66986525083895
+    },
+    {
+      "line": 517,
+      "pixel": 800,
+      "slantRangeTime": 0.0058091327160513075,
+      "latitude": 55.27896010701548,
+      "longitude": 11.12339152262212,
+      "height": 2.4108924645185548,
+      "incidenceAngle": 38.25041165505716,
+      "elevationAngle": 33.87608527983659
+    },
+    {
+      "line": 517,
+      "pixel": 1200,
+      "slantRangeTime": 0.00582568322010466,
+      "latitude": 55.28535175843094,
+      "longitude": 11.06147484099583,
+      "height": 1.1078007861871204,
+      "incidenceAngle": 38.49263178809268,
+      "elevationAngle": 34.08230530883422
+    },
+    {
+      "line": 517,
+      "pixel": 1599,
+      "slantRangeTime": 0.005842234937843293,
+      "latitude": 55.29171322356461,
+      "longitude": 10.999692087136234,
+      "height": 0.39458585073288915,
+      "incidenceAngle": 38.733693474910794,
+      "elevationAngle": 34.28745036671716
+    },
+    {
+      "line": 1033,
+      "pixel": 0,
+      "slantRangeTime": 0.005776204936692799,
+      "latitude": 55.21991989726289,
+      "longitude": 11.23221469082107,
+      "height": 3.2814625096955288,
+      "incidenceAngle": 37.764830660028395,
+      "elevationAngle": 33.46238678324585
+    },
+    {
+      "line": 1033,
+      "pixel": 400,
+      "slantRangeTime": 0.00579259540648934,
+      "latitude": 55.22636666941074,
+      "longitude": 11.170392760654476,
+      "height": 2.6123711756848578,
+      "incidenceAngle": 38.009412778240254,
+      "elevationAngle": 33.67096202879484
+    },
+    {
+      "line": 1033,
+      "pixel": 800,
+      "slantRangeTime": 0.005809146304384581,
+      "latitude": 55.23275704746737,
+      "longitude": 11.108539674077287,
+      "height": 1.695810390520983,
+      "incidenceAngle": 38.251673020577115,
+      "elevationAngle": 33.87721801032166
+    },
+    {
+      "line": 1033,
+      "pixel": 1200,
+      "slantRangeTime": 0.005825697202279823,
+      "latitude": 55.239147425524024,
+      "longitude": 11.046686587500101,
+      "height": 0.7792496053571081,
+      "incidenceAngle": 38.49393326291397,
+      "elevationAngle": 34.08347399184849
+    },
+    {
+      "line": 1033,
+      "pixel": 1599,
+      "slantRangeTime": 0.00584224931162325,
+      "latitude": 55.24550836886587,
+      "longitude": 10.984960057874465,
+      "height": 0.842403307835785,
+      "incidenceAngle": 38.73507869248625,
+      "elevationAngle": 34.288694414952616
+    },
+    {
+      "line": 1549,
+      "pixel": 0,
+      "slantRangeTime": 0.005776217553142092,
+      "latitude": 55.173719843405536,
+      "longitude": 11.217234687519555,
+      "height": 2.1653532048955575,
+      "incidenceAngle": 37.76605272020974,
+      "elevationAngle": 33.463484687607504
+    },
+    {
+      "line": 1549,
+      "pixel": 400,
+      "slantRangeTime": 0.005792608415818335,
+      "latitude": 55.18016494731068,
+      "longitude": 11.155479241933843,
+      "height": 1.7238486401629662,
+      "incidenceAngle": 38.010656769064774,
+      "elevationAngle": 33.672079474219125
+    },
+    {
+      "line": 1549,
+      "pixel": 800,
+      "slantRangeTime": 0.0058091597020409,
+      "latitude": 55.18655389997937,
+      "longitude": 11.093691213560856,
+      "height": 1.119050175649467,
+      "incidenceAngle": 38.25294816612844,
+      "elevationAngle": 33.87836332798575
+    },
+    {
+      "line": 1549,
+      "pixel": 1200,
+      "slantRangeTime": 0.005825710988263464,
+      "latitude": 55.19294285264807,
+      "longitude": 11.031903185187868,
+      "height": 0.5142517111359678,
+      "incidenceAngle": 38.49523956319212,
+      "elevationAngle": 34.08464718175238
+    },
+    {
+      "line": 1549,
+      "pixel": 1599,
+      "slantRangeTime": 0.00584226348372881,
+      "latitude": 55.19930318930742,
+      "longitude": 10.970233679340959,
+      "height": 1.3137478865272378,
+      "incidenceAngle": 38.736463770661054,
+      "elevationAngle": 34.28993849293874
+    }
+  ],
+  "measurement_key": "Sentinel-1/SAR/IW_GRDH_1S/2026/10/14/S1D_IW_GRDH_1SDV_20261014T053204_20261014T053229_005007_009759_0CC6.SAFE/measurement/s1d-iw-grd-vv-20261014t053204-20261014t053229-005007-009759-001.tiff",
+  "calibration_key": "Sentinel-1/SAR/IW_GRDH_1S/2026/10/14/S1D_IW_GRDH_1SDV_20261014T053204_20261014T053229_005007_009759_0CC6.SAFE/annotation/calibration/calibration-s1d-iw-grd-vv-20261014t053204-20261014t053229-005007-009759-001.xml",
+  "annotation_key": "Sentinel-1/SAR/IW_GRDH_1S/2026/10/14/S1D_IW_GRDH_1SDV_20261014T053204_20261014T053229_005007_009759_0CC6.SAFE/annotation/s1d-iw-grd-vv-20261014t053204-20261014t053229-005007-009759-001.xml",
+  "odata_real_record": {
+    "Id": "0eb3f379-e4cf-4094-8eff-0dc3c8fd6329",
+    "Name": "S1D_IW_GRDH_1SDV_20261014T053204_20261014T053229_005007_009759_0CC6.SAFE",
+    "ContentLength": 1773473276,
+    "S3Path": "/eodata/Sentinel-1/SAR/IW_GRDH_1S/2026/10/14/S1D_IW_GRDH_1SDV_20261014T053204_20261014T053229_005007_009759_0CC6.SAFE",
+    "OriginDate": "2026-10-14T07:23:21.419000Z",
+    "PublicationDate": "2026-10-14T13:18:46.840752Z",
+    "ModificationDate": "2026-10-14T13:20:19.177772Z",
+    "ContentDate": {
+      "Start": "2026-10-14T05:32:04.401250Z",
+      "End": "2026-10-14T05:32:29.398717Z"
+    },
+    "GeoFootprint": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [
+            12.959793,
+            54.822739
+          ],
+          [
+            13.521464,
+            56.31131
+          ],
+          [
+            9.288122,
+            56.734665
+          ],
+          [
+            8.883656,
+            55.241634
+          ],
+          [
+            12.959793,
+            54.822739
+          ]
+        ]
+      ]
+    }
+  }
+}
