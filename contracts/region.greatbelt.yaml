@@ -1,0 +1,27 @@
+# Example Region config. Polygon is a rough box over the Great Belt (Storebaelt) and its approaches;
+# refine against a real Scene footprint before the first production run.
+region_id: great-belt
+name: Great Belt
+polygon:
+  - [10.70, 55.00]
+  - [11.30, 55.00]
+  - [11.30, 55.70]
+  - [10.70, 55.70]
+  - [10.70, 55.00]
+discovery:
+  lookback_days: 7
+detector:
+  name: ca-cfar
+  version: "1"
+  params:
+    guard_cells: 8
+    background_cells: 24
+    pfa: 1.0e-6
+    min_cluster_pixels: 3
+land_mask:
+  near_shore_m: 300
+validation:
+  gate_m: 500
+  ais_margin_minutes: 30
+retention:
+  delete_raster_after_detect: true

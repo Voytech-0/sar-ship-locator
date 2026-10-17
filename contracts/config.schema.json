@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/sar-ship-locator/config.schema.json",
+  "title": "Region configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["region_id", "name", "polygon", "discovery", "detector", "validation", "retention"],
+  "properties": {
+    "region_id": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+    "name": {"type": "string"},
+    "polygon": {
+      "type": "array",
+      "description": "Exterior ring, [lon, lat], first point repeated at the end.",
+      "minItems": 4,
+      "items": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "number"}}
+    },
+    "discovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lookback_days"],
+      "properties": {
+        "lookback_days": {"type": "integer", "minimum": 1, "description": "Default search window when `since` is omitted."}
+      }
+    },
+    "detector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "params"],
+      "properties": {
+        "name": {"type": "string"},
+        "version": {"type": "string"},
+        "params": {
+          "type": "object",
+          "description": "Detector-specific. For ca-cfar: guard_cells, background_cells, pfa, min_cluster_pixels."
+        }
+      }
+    },
+    "land_mask": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "near_shore_m": {"type": "number", "minimum": 0, "default": 300}
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gate_m", "ais_margin_minutes"],
+      "properties": {
+        "gate_m": {"type": "number", "exclusiveMinimum": 0, "description": "Match distance gate."},
+        "ais_margin_minutes": {"type": "integer", "minimum": 0, "description": "AIS must be loaded this long before and after acquisition."}
+      }
+    },
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["delete_raster_after_detect"],
+      "properties": {
+        "delete_raster_after_detect": {"type": "boolean"}
+      }
+    }
+  }
+}

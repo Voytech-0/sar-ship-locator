@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+.env
+*.egg-info/
+# Local data (never commit rasters or AIS archives)
+data/
+!tests/fixtures/**

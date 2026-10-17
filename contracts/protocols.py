@@ -1,0 +1,165 @@
+"""Interfaces between pipeline components. Implementations live in `pipeline/`; fakes in `tests/`.
+
+Pure value types plus Protocols, no I/O and no third-party imports at runtime, so every stream can
+type-check and test against this file alone. Coordinates are WGS 84 (lon, lat). Times are timezone-aware UTC.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+from datetime import date, datetime
+from enum import StrEnum
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    import numpy as np
+    from numpy.typing import NDArray
+
+LonLat = tuple[float, float]
+
+
+class ShoreClass(StrEnum):
+    OPEN_WATER = "open_water"
+    NEAR_SHORE = "near_shore"
+    ON_LAND = "on_land"  # never stored; Detections here are dropped
+
+
+class MatchLabel(StrEnum):
+    MATCHED = "matched"
+    UNMATCHED = "unmatched"
+    AMBIGUOUS = "ambiguous"
+
+
+@dataclass(frozen=True)
+class Region:
+    region_id: str
+    name: str
+    polygon: Sequence[LonLat]  # exterior ring, closed
+
+
+@dataclass(frozen=True)
+class SceneRef:
+    """A Scene as listed by the catalogue, before any download."""
+
+    scene_id: str
+    acquired_at: datetime
+    footprint: Sequence[LonLat]  # exterior ring, closed
+
+
+@dataclass(frozen=True)
+class SceneRaster:
+    """A Scene cropped to its Region, ready for detection."""
+
+    scene_id: str
+    acquired_at: datetime
+    sigma0_vv: NDArray[np.float32]  # linear sigma0, shape (rows, cols); NaN outside the Region
+    transform: tuple[float, float, float, float, float, float]  # affine (a, b, c, d, e, f), pixel -> lon/lat
+    water_mask: NDArray[np.bool_] | None = None  # True = open water; set by the stage before detection
+
+
+@dataclass(frozen=True)
+class DetectionCandidate:
+    position: LonLat
+    confidence: float  # 0..1
+    length_m: float | None
+    pixel_box: tuple[int, int, int, int]  # (row0, col0, row1, col1), used to cut the Chip
+
+
+@dataclass(frozen=True)
+class AisPosition:
+    mmsi: int
+    ts: datetime
+    position: LonLat
+    sog_knots: float | None = None
+    cog_deg: float | None = None
+    heading: int | None = None
+
+
+@dataclass(frozen=True)
+class DetectionRef:
+    detection_id: str
+    position: LonLat
+    length_m: float | None
+
+
+@dataclass(frozen=True)
+class ValidationResult:
+    detection_id: str
+    label: MatchLabel
+    matched_mmsi: int | None  # set iff label == MATCHED
+    match_distance_m: float | None  # set iff label == MATCHED
+
+
+class CatalogueClient(Protocol):
+    """Lists Sentinel-1 GRD products. Real: CDSE OData/STAC. Fake: `fake-sources`."""
+
+    def search(self, region: Region, since: datetime) -> Sequence[SceneRef]: ...
+
+
+class SceneFetcher(Protocol):
+    """Downloads a product and returns it cropped to the Region. Raises `PermanentError` on corrupt data."""
+
+    def fetch(self, scene: SceneRef, region: Region) -> SceneRaster: ...
+
+
+class AisSource(Protocol):
+    """Source of historical AIS. Real: DMA daily archives. Possible fallback: a live recorder."""
+
+    def latest_available_day(self) -> date | None: ...
+
+    def positions(self, day: date, region: Region) -> Iterable[AisPosition]:
+        """All AIS Positions of one UTC day inside the Region. Raises `NotAvailableError` if not published."""
+        ...
+
+
+class LandMask(Protocol):
+    def water_mask(self, raster: SceneRaster) -> NDArray[np.bool_]:
+        """Open-water mask aligned to `raster` (True = open water). Excludes land and the near-shore band."""
+        ...
+
+    def classify(self, position: LonLat) -> ShoreClass: ...
+
+
+class Detector(Protocol):
+    name: str
+    version: str  # bumps whenever behaviour or parameters change
+
+    def detect(self, raster: SceneRaster) -> Sequence[DetectionCandidate]:
+        """Pure function of the raster and the Detector's own parameters. Uses `raster.water_mask` if set."""
+        ...
+
+
+class Validator(Protocol):
+    def validate(
+        self,
+        detections: Sequence[DetectionRef],
+        positions: Iterable[AisPosition],
+        acquired_at: datetime,
+        gate_m: float,
+    ) -> Sequence[ValidationResult]:
+        """Interpolate AIS tracks to `acquired_at`, match nearest-neighbour one-to-one within `gate_m`.
+        A Detection with more than one track in the gate is AMBIGUOUS, one with none is UNMATCHED."""
+        ...
+
+
+class ObjectStore(Protocol):
+    def put(self, key: str, data: bytes, content_type: str) -> None: ...
+
+    def get(self, key: str) -> bytes: ...
+
+    def exists(self, key: str) -> bool: ...
+
+    def delete(self, key: str) -> None: ...
+
+
+class TransientError(Exception):
+    """Retryable failure (network, rate limit). Job fails with `error_retryable = true`."""
+
+
+class PermanentError(Exception):
+    """Not retryable (corrupt product, unsupported format). Job fails with `error_retryable = false`."""
+
+
+class NotAvailableError(TransientError):
+    """The requested data is not published yet (e.g. AIS day within the archive lag)."""

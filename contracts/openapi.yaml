@@ -1,0 +1,516 @@
+openapi: 3.1.0
+info:
+  title: SAR Ship Locator pipeline API
+  version: 1.0.0
+  description: |
+    Internal API of `pipeline-api`. Airflow submits stage Jobs and polls them; it never processes data itself
+    (docs/adr/0002). Not exposed outside the compose network, so there is no authentication.
+
+    **Job idempotency.** A stage is identified by its name plus its request body. Submitting the same stage and
+    input again returns the existing Job (`200`) while it is `queued`, `running` or `succeeded`. If the existing
+    Job `failed`, a new Job is created (`202`) so Airflow retries work.
+
+    **Scene status machine.** `discovered -> fetched -> detected -> validated`; any stage may move a Scene to
+    `failed` (see `failed_stage`). Re-running a stage on a `failed` Scene resets it on success.
+servers:
+  - url: http://pipeline-api:8000/v1
+tags:
+  - name: stages
+  - name: jobs
+  - name: data
+  - name: ops
+
+paths:
+  /stages/discover:
+    post:
+      tags: [stages]
+      operationId: submitDiscover
+      summary: Find new Scenes intersecting a Region and register them as `discovered`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DiscoverRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/JobExisting'}
+        '202': {$ref: '#/components/responses/JobAccepted'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+
+  /stages/fetch:
+    post:
+      tags: [stages]
+      operationId: submitFetch
+      summary: Download a Scene and crop it to its Region. Scene becomes `fetched`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SceneStageRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/JobExisting'}
+        '202': {$ref: '#/components/responses/JobAccepted'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/WrongStatus'}
+        '422': {$ref: '#/components/responses/Invalid'}
+
+  /stages/detect:
+    post:
+      tags: [stages]
+      operationId: submitDetect
+      summary: Run a Detector on a `fetched` Scene, store Detections and Chips. Scene becomes `detected`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DetectRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/JobExisting'}
+        '202': {$ref: '#/components/responses/JobAccepted'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/WrongStatus'}
+        '422': {$ref: '#/components/responses/Invalid'}
+
+  /stages/ais-load:
+    post:
+      tags: [stages]
+      operationId: submitAisLoad
+      summary: Load one UTC day of AIS Positions, filtered to a Region.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AisLoadRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/JobExisting'}
+        '202': {$ref: '#/components/responses/JobAccepted'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+
+  /stages/validate:
+    post:
+      tags: [stages]
+      operationId: submitValidate
+      summary: Validate a `detected` Scene's Detections against loaded AIS Positions. Scene becomes `validated`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SceneStageRequest'}
+      responses:
+        '200': {$ref: '#/components/responses/JobExisting'}
+        '202': {$ref: '#/components/responses/JobAccepted'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/WrongStatus'}
+        '422': {$ref: '#/components/responses/Invalid'}
+
+  /jobs/{job_id}:
+    get:
+      tags: [jobs]
+      operationId: getJob
+      summary: Poll a Job.
+      parameters:
+        - {name: job_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: The Job.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /regions:
+    get:
+      tags: [data]
+      operationId: listRegions
+      summary: Configured Regions.
+      responses:
+        '200':
+          description: All Regions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Region'}
+
+  /scenes:
+    get:
+      tags: [data]
+      operationId: listScenes
+      summary: List Scenes, optionally filtered.
+      parameters:
+        - {name: region_id, in: query, schema: {type: string}}
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/SceneStatus'}}
+        - name: ais_ready
+          in: query
+          description: |
+            `true`: only Scenes whose acquisition time (plus/minus the Region's `validation.ais_margin_minutes`)
+            lies inside UTC days for which AIS has been loaded. `false`: the others.
+          schema: {type: boolean}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        '200':
+          description: A page of Scenes, newest acquisition first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/Scene'}
+                  total: {type: integer, minimum: 0}
+
+  /scenes/{scene_id}:
+    get:
+      tags: [data]
+      operationId: getScene
+      parameters:
+        - {name: scene_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The Scene.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Scene'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /scenes/{scene_id}/detections:
+    get:
+      tags: [data]
+      operationId: getSceneDetections
+      summary: Detections of a Scene as GeoJSON.
+      parameters:
+        - {name: scene_id, in: path, required: true, schema: {type: string}}
+        - name: detector_name
+          in: query
+          schema: {type: string}
+        - name: detector_version
+          in: query
+          schema: {type: string}
+      responses:
+        '200':
+          description: FeatureCollection of Detections (all Detector versions unless filtered).
+          content:
+            application/geo+json:
+              schema: {$ref: '#/components/schemas/DetectionCollection'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /healthz:
+    get:
+      tags: [ops]
+      operationId: healthz
+      summary: Liveness and dependency check (database and object store reachable).
+      responses:
+        '200':
+          description: Healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: {type: string, const: ok}
+        '503':
+          description: A dependency is unreachable.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+
+  /metrics:
+    get:
+      tags: [ops]
+      operationId: metrics
+      summary: Prometheus metrics (names in contracts/metrics.md).
+      responses:
+        '200':
+          description: Prometheus text exposition format.
+          content:
+            text/plain:
+              schema: {type: string}
+
+components:
+  responses:
+    JobAccepted:
+      description: New Job created.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Job'}
+    JobExisting:
+      description: A queued, running or succeeded Job for the same stage and input already exists.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Job'}
+    NotFound:
+      description: Unknown Region, Scene or Job.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    WrongStatus:
+      description: The Scene's status does not allow this stage (e.g. `detect` on a `discovered` Scene).
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Invalid:
+      description: Malformed request body.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457 problem details.
+      required: [title, status]
+      properties:
+        type: {type: string}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+
+    Stage:
+      type: string
+      enum: [discover, fetch, detect, ais-load, validate]
+
+    JobStatus:
+      type: string
+      enum: [queued, running, succeeded, failed]
+
+    SceneStatus:
+      type: string
+      enum: [discovered, fetched, detected, validated, failed]
+
+    MatchLabel:
+      type: string
+      enum: [matched, unmatched, ambiguous]
+
+    ShoreClass:
+      type: string
+      description: Detections on land are dropped and never stored.
+      enum: [open_water, near_shore]
+
+    DiscoverRequest:
+      type: object
+      additionalProperties: false
+      required: [region_id]
+      properties:
+        region_id: {type: string}
+        since:
+          type: [string, 'null']
+          format: date-time
+          description: Only products acquired at or after this time. Default is the Region's configured look-back.
+
+    SceneStageRequest:
+      type: object
+      additionalProperties: false
+      required: [scene_id]
+      properties:
+        scene_id: {$ref: '#/components/schemas/SceneId'}
+
+    DetectRequest:
+      type: object
+      additionalProperties: false
+      required: [scene_id]
+      properties:
+        scene_id: {$ref: '#/components/schemas/SceneId'}
+        detector:
+          description: Defaults to the Region's configured Detector. Pins a specific implementation and version.
+          type: object
+          additionalProperties: false
+          required: [name]
+          properties:
+            name: {type: string, examples: [ca-cfar]}
+            version: {type: string, examples: ['1']}
+
+    AisLoadRequest:
+      type: object
+      additionalProperties: false
+      required: [region_id, date]
+      properties:
+        region_id: {type: string}
+        date:
+          type: string
+          format: date
+          description: UTC day.
+
+    SceneId:
+      type: string
+      description: Sentinel-1 product name without extension.
+      examples: [S1A_IW_GRDH_1SDV_20261014T053012_20261014T053037_054321_069ABC_1234]
+
+    Job:
+      type: object
+      required: [id, stage, input, status, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        stage: {$ref: '#/components/schemas/Stage'}
+        input:
+          type: object
+          description: The request body that created the Job.
+        status: {$ref: '#/components/schemas/JobStatus'}
+        created_at: {type: string, format: date-time}
+        started_at: {type: [string, 'null'], format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+        error:
+          type: [string, 'null']
+          description: Set when `status` is `failed`.
+        error_retryable:
+          type: [boolean, 'null']
+          description: |
+            Set when `status` is `failed`. `false` marks a permanent error (e.g. corrupt product) that Airflow
+            should not retry.
+        result:
+          description: Set when `status` is `succeeded`; shape depends on `stage`.
+          oneOf:
+            - {$ref: '#/components/schemas/DiscoverResult'}
+            - {$ref: '#/components/schemas/FetchResult'}
+            - {$ref: '#/components/schemas/DetectResult'}
+            - {$ref: '#/components/schemas/AisLoadResult'}
+            - {$ref: '#/components/schemas/ValidateResult'}
+            - type: 'null'
+
+    DiscoverResult:
+      type: object
+      required: [new_scene_ids, known_scene_count]
+      properties:
+        new_scene_ids:
+          type: array
+          items: {$ref: '#/components/schemas/SceneId'}
+        known_scene_count: {type: integer, minimum: 0}
+
+    FetchResult:
+      type: object
+      required: [raster_key, bytes_downloaded]
+      properties:
+        raster_key: {type: string, description: Object store key of the cropped raster.}
+        bytes_downloaded: {type: integer, minimum: 0}
+
+    DetectResult:
+      type: object
+      required: [detection_count, detector_name, detector_version]
+      properties:
+        detection_count: {type: integer, minimum: 0}
+        dropped_on_land: {type: integer, minimum: 0}
+        detector_name: {type: string}
+        detector_version: {type: string}
+
+    AisLoadResult:
+      type: object
+      required: [positions_loaded]
+      properties:
+        positions_loaded: {type: integer, minimum: 0}
+
+    ValidateResult:
+      type: object
+      required: [matched, unmatched, ambiguous]
+      properties:
+        matched: {type: integer, minimum: 0}
+        unmatched: {type: integer, minimum: 0}
+        ambiguous: {type: integer, minimum: 0}
+
+    Region:
+      type: object
+      required: [region_id, name, polygon]
+      properties:
+        region_id: {type: string, examples: [great-belt]}
+        name: {type: string}
+        polygon: {$ref: '#/components/schemas/Polygon'}
+
+    Scene:
+      type: object
+      required: [scene_id, region_id, acquired_at, status, footprint]
+      properties:
+        scene_id: {$ref: '#/components/schemas/SceneId'}
+        region_id: {type: string}
+        acquired_at: {type: string, format: date-time}
+        status: {$ref: '#/components/schemas/SceneStatus'}
+        failed_stage:
+          description: Set when `status` is `failed`.
+          oneOf:
+            - {$ref: '#/components/schemas/Stage'}
+            - type: 'null'
+        error: {type: [string, 'null']}
+        footprint: {$ref: '#/components/schemas/Polygon'}
+        raster_key: {type: [string, 'null']}
+        detection_count: {type: [integer, 'null'], minimum: 0}
+        discovered_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+
+    Polygon:
+      type: object
+      description: GeoJSON Polygon, WGS 84, [lon, lat].
+      required: [type, coordinates]
+      properties:
+        type: {type: string, const: Polygon}
+        coordinates:
+          type: array
+          items:
+            type: array
+            minItems: 4
+            items:
+              type: array
+              minItems: 2
+              maxItems: 2
+              items: {type: number}
+
+    Point:
+      type: object
+      description: GeoJSON Point, WGS 84, [lon, lat].
+      required: [type, coordinates]
+      properties:
+        type: {type: string, const: Point}
+        coordinates:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: {type: number}
+
+    DetectionProperties:
+      type: object
+      required: [id, scene_id, detector_name, detector_version, confidence, shore_class]
+      properties:
+        id: {type: string, format: uuid}
+        scene_id: {$ref: '#/components/schemas/SceneId'}
+        detector_name: {type: string}
+        detector_version: {type: string}
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        length_m:
+          type: [number, 'null']
+          minimum: 0
+          description: Estimated length from the pixel cluster extent.
+        shore_class: {$ref: '#/components/schemas/ShoreClass'}
+        chip_key: {type: [string, 'null']}
+        label:
+          description: Null until the Scene is validated.
+          oneOf:
+            - {$ref: '#/components/schemas/MatchLabel'}
+            - type: 'null'
+        matched_mmsi:
+          type: [integer, 'null']
+          description: Set only when `label` is `matched`.
+        match_distance_m:
+          type: [number, 'null']
+          minimum: 0
+          description: Set only when `label` is `matched`.
+
+    DetectionFeature:
+      type: object
+      required: [type, geometry, properties]
+      properties:
+        type: {type: string, const: Feature}
+        geometry: {$ref: '#/components/schemas/Point'}
+        properties: {$ref: '#/components/schemas/DetectionProperties'}
+
+    DetectionCollection:
+      type: object
+      required: [type, features]
+      properties:
+        type: {type: string, const: FeatureCollection}
+        features:
+          type: array
+          items: {$ref: '#/components/schemas/DetectionFeature'}
