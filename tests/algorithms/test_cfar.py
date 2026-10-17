@@ -1,3 +1,4 @@
+import dataclasses
 import time
 from pathlib import Path
 
@@ -59,6 +60,21 @@ def test_finds_every_injected_ship_with_no_false_alarms(detector: CaCfarDetector
         # Within 2 pixels (about 20 m) of the true centre.
         assert abs(nearest.position[0] - lon) < 2 * abs(TRANSFORM[0])
         assert abs(nearest.position[1] - lat) < 2 * abs(TRANSFORM[4])
+
+
+def test_positions_come_from_geolocate_when_set(detector: CaCfarDetector) -> None:
+    img = speckled_sea((200, 200), seed=2)
+    add_ships(img, [Ship(100, 100, 4, 4)])
+    plain = detector.detect(make_raster(img))
+    assert len(plain) == 1
+
+    def shifted(rows: np.ndarray, cols: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        return cols * 0.0 + 12.5, rows * 0.0 + 55.5
+
+    raster = dataclasses.replace(make_raster(img), geolocate=shifted)
+    (found,) = detector.detect(raster)
+    assert found.position == (12.5, 55.5)
+    assert found.pixel_box == plain[0].pixel_box
 
 
 def test_candidate_attributes(detector: CaCfarDetector) -> None:

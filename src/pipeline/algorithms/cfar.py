@@ -208,7 +208,10 @@ class CaCfarDetector:
         length = np.sqrt(12 * lam + pixel_m**2)
 
         confidence = np.clip(1.0 - self.threshold / peak, 0.0, 1.0)
-        lons, lats = pixel_to_lonlat(raster.transform, row_c + 0.5, col_c + 0.5)
+        if raster.geolocate is not None:  # accurate GCP mapping; takes pixel-centre indices
+            lons, lats = raster.geolocate(row_c, col_c)
+        else:
+            lons, lats = pixel_to_lonlat(raster.transform, row_c + 0.5, col_c + 0.5)
 
         result = [
             DetectionCandidate(

@@ -174,11 +174,22 @@ class Sentinel1S3Fetcher:
             affine_max_error_m=fit.max_error_m,
             seconds=time.monotonic() - t0,
         )
+
+        def geolocate(
+            rows: NDArray[np.float64], cols: NDArray[np.float64]
+        ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+            # window-relative pixel-centre indices -> file indices -> bilinear GCP interpolation
+            return grid.lonlat(
+                np.asarray(rows, dtype=np.float64) + r0, np.asarray(cols, dtype=np.float64) + c0
+            )
+
         return SceneRaster(
             scene_id=scene.scene_id,
             acquired_at=scene.acquired_at,
             sigma0_vv=sigma0,
             transform=fit.transform,
+            geolocate=geolocate,
+            bytes_downloaded=self._bytes,
         )
 
     # ----------------------------------------------------------------- helpers

@@ -66,6 +66,23 @@ def test_row_range_fetch_is_calibrated_cropped_and_masked(
     assert diag.affine_max_error_px < 0.01
 
 
+def test_raster_carries_gcp_geolocation_and_bytes_downloaded(
+    s3: Any, product: bytes, fast_retry: RetryPolicy
+) -> None:
+    f = fetcher(s3, fast_retry)
+    raster = f.fetch(scene(), region())
+    diag = f.last_diagnostics
+    assert diag is not None
+    r0, _, c0, _ = diag.window
+    assert raster.geolocate is not None
+    lon, lat = raster.geolocate(
+        np.array([SHIP[0] - r0], dtype=np.float64), np.array([SHIP[1] - c0], dtype=np.float64)
+    )
+    want_lon, want_lat = synth.linear_mapping(float(SHIP[1]), float(SHIP[0]))
+    assert lon[0] == pytest.approx(want_lon, abs=1e-9) and lat[0] == pytest.approx(want_lat, abs=1e-9)
+    assert raster.bytes_downloaded == diag.bytes_downloaded > 0
+
+
 def test_only_needed_rows_are_downloaded(s3: Any, product: bytes, fast_retry: RetryPolicy) -> None:
     client = FlakyClient(s3)
     f = fetcher(client, fast_retry, chunk_bytes=60_000)
