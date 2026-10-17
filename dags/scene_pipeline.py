@@ -31,7 +31,14 @@ def scene_pipeline() -> None:
         """Flatten the per-Region DiscoverResults into one list of Scene ids."""
         return [sid for result in discoveries for sid in result["new_scene_ids"]]
 
-    discover = StageJobOperator.partial(task_id="discover", stage="discover").expand(region_id=region_ids())
+    # `since` must change every run: a succeeded Job dedupes forever on (stage, input), so a bare
+    # {region_id} would return the first run's result each day. The 2-day overlap tolerates late
+    # catalogue publication; Scenes already registered are skipped by the API.
+    discover = StageJobOperator.partial(
+        task_id="discover",
+        stage="discover",
+        since="{{ (data_interval_start - macros.timedelta(days=2)).isoformat() }}",
+    ).expand(region_id=region_ids())
 
     # A mapped group per Scene: one Scene failing fetch does not stop the others, and its detect is skipped.
     @task_group

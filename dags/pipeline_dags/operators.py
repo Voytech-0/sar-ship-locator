@@ -25,7 +25,7 @@ class StageJobOperator(BaseOperator):
     Result is the Job's `result` object, pushed to XCom.
     """
 
-    template_fields = ("region_id", "scene_id", "date")
+    template_fields = ("region_id", "scene_id", "date", "since")
 
     def __init__(
         self,
@@ -34,6 +34,7 @@ class StageJobOperator(BaseOperator):
         region_id: str | None = None,
         scene_id: str | None = None,
         date: str | None = None,
+        since: str | None = None,
         skip_when_retries_exhausted: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -42,10 +43,16 @@ class StageJobOperator(BaseOperator):
         self.region_id = region_id
         self.scene_id = scene_id
         self.date = date
+        self.since = since
         self.skip_when_retries_exhausted = skip_when_retries_exhausted
 
     def body(self) -> dict[str, str]:
-        fields = {"region_id": self.region_id, "scene_id": self.scene_id, "date": self.date}
+        fields = {
+            "region_id": self.region_id,
+            "scene_id": self.scene_id,
+            "date": self.date,
+            "since": self.since,
+        }
         return {k: v for k, v in fields.items() if v is not None}
 
     def execute(self, context: Context) -> Any:

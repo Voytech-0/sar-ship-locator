@@ -16,10 +16,10 @@ LOGICAL_DATE = datetime(2026, 10, 17, tzinfo=UTC)
 A, B = "S1A_SCENE_A", "S1A_SCENE_B"
 
 
-def run(dag_id: str) -> Any:
+def run(dag_id: str, logical_date: datetime = LOGICAL_DATE) -> Any:
     bag = DagBag(dag_folder=str(DAGS), bundle_path=DAGS, bundle_name="dags")
     assert not bag.import_errors, bag.import_errors
-    return bag.dags[dag_id].test(logical_date=LOGICAL_DATE)
+    return bag.dags[dag_id].test(logical_date=logical_date)
 
 
 def states(dagrun: Any) -> dict[str, list[str | None]]:
@@ -54,6 +54,13 @@ def test_rerun_follows_existing_jobs_via_http_200(api: StubServer) -> None:
     assert api.stub.status_codes("discover") == [202, 200]
     assert api.stub.status_codes("fetch") == [202, 200]
     assert api.stub.attempts_of("fetch", A) == 1  # no second Job was created
+
+
+def test_next_days_discover_is_a_new_job_not_the_cached_result(api: StubServer) -> None:
+    """A succeeded Job dedupes forever on (stage, input), so discover's input must change every run."""
+    run("scene_pipeline")
+    run("scene_pipeline", logical_date=datetime(2026, 10, 18, tzinfo=UTC))
+    assert api.stub.status_codes("discover") == [202, 202]
 
 
 def test_retryable_failure_is_retried_by_airflow(api: StubServer) -> None:
