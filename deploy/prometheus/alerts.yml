@@ -1,0 +1,20 @@
+groups:
+  - name: sar-pipeline
+    rules:
+      - alert: NoNewSceneIn7Days
+        expr: time() - sar_last_scene_acquired_timestamp_seconds > 7 * 24 * 3600
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "No new Scene acquired for {{ $labels.region_id }} in 7 days"
+          description: "Newest Scene is older than 7 days; check the discover job and Sentinel-1 coverage."
+
+      - alert: AisLagHigh
+        expr: sar_ais_lag_days > 7
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "AIS archive for {{ $labels.region_id }} is more than 7 days behind"
+          description: "Validation is blocked until AIS days are loaded; the usual lag is about 3 days."

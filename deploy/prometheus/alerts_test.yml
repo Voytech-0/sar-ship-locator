@@ -1,0 +1,40 @@
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1h
+
+tests:
+  - interval: 1h
+    input_series:
+      # newest Scene acquired at t=0 (1970), evaluation time far later -> stale
+      - series: 'sar_last_scene_acquired_timestamp_seconds{region_id="great-belt"}'
+        values: "0+0x400"
+      # fresh Region: timestamp keeps up with the clock (one hour per step)
+      - series: 'sar_last_scene_acquired_timestamp_seconds{region_id="fresh"}'
+        values: "0+3600x400"
+      - series: 'sar_ais_lag_days{region_id="great-belt"}'
+        values: "3x400"
+      - series: 'sar_ais_lag_days{region_id="late"}'
+        values: "10x400"
+    alert_rule_test:
+      - eval_time: 300h
+        alertname: NoNewSceneIn7Days
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              region_id: great-belt
+            exp_annotations:
+              summary: "No new Scene acquired for great-belt in 7 days"
+              description: "Newest Scene is older than 7 days; check the discover job and Sentinel-1 coverage."
+      - eval_time: 100h
+        alertname: NoNewSceneIn7Days
+        exp_alerts: []
+      - eval_time: 12h
+        alertname: AisLagHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              region_id: late
+            exp_annotations:
+              summary: "AIS archive for late is more than 7 days behind"
+              description: "Validation is blocked until AIS days are loaded; the usual lag is about 3 days."

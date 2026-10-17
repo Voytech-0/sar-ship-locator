@@ -1,0 +1,181 @@
+{
+  "uid": "sar-detections",
+  "title": "Detections",
+  "tags": [
+    "sar-ship-locator"
+  ],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Detections per Scene",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgis"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgis"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT s.acquired_at AS time, count(d.id) AS detections\nFROM scenes s\nLEFT JOIN detections d ON d.scene_id = s.scene_id\nWHERE $__timeFilter(s.acquired_at)\nGROUP BY s.scene_id, s.acquired_at\nORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Matched / unmatched / ambiguous per Scene",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgis"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgis"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT s.acquired_at AS time, v.label::text AS metric, count(*) AS value\nFROM validations v\nJOIN detections d ON d.id = v.detection_id\nJOIN scenes s ON s.scene_id = d.scene_id\nWHERE $__timeFilter(s.acquired_at)\nGROUP BY s.acquired_at, v.label\nORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Validation split",
+      "type": "piechart",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgis"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 8,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgis"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT v.label::text AS label, count(*) AS detections\nFROM validations v\nJOIN detections d ON d.id = v.detection_id\nJOIN scenes s ON s.scene_id = d.scene_id\nWHERE $__timeFilter(s.acquired_at)\nGROUP BY v.label"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Recent Detections",
+      "type": "geomap",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgis"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 8,
+        "w": 16,
+        "h": 14
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgis"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ST_Y(d.geom) AS latitude, ST_X(d.geom) AS longitude,\n       COALESCE(v.label::text, 'unvalidated') AS label,\n       d.confidence, d.length_m, d.shore::text AS shore, s.acquired_at\nFROM detections d\nJOIN scenes s ON s.scene_id = d.scene_id\nLEFT JOIN validations v ON v.detection_id = d.id\nWHERE $__timeFilter(s.acquired_at)\nORDER BY s.acquired_at DESC\nLIMIT 5000"
+        }
+      ],
+      "options": {
+        "view": {
+          "id": "coords",
+          "lat": 55.35,
+          "lon": 11.0,
+          "zoom": 8
+        },
+        "basemap": {
+          "type": "default"
+        },
+        "layers": [
+          {
+            "type": "markers",
+            "name": "Detections",
+            "config": {
+              "style": {
+                "size": {
+                  "fixed": 5
+                },
+                "color": {
+                  "field": "label",
+                  "fixed": "blue"
+                },
+                "opacity": 0.8
+              }
+            },
+            "location": {
+              "mode": "coords",
+              "latitude": "latitude",
+              "longitude": "longitude"
+            },
+            "tooltip": true
+          }
+        ]
+      }
+    }
+  ]
+}
