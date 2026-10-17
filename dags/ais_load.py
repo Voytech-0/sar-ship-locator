@@ -17,7 +17,14 @@ from typing import Any
 from airflow.sdk import dag, task
 
 from pipeline_dags.client import PipelineApi
-from pipeline_dags.common import AIS_LOADED, START_DATE, ais_extra_days, ais_lag_days, default_args
+from pipeline_dags.common import (
+    AIS_LOADED,
+    START_DATE,
+    ais_extra_days,
+    ais_lag_days,
+    default_args,
+    reference_time,
+)
 from pipeline_dags.operators import StageJobOperator
 
 
@@ -32,8 +39,13 @@ from pipeline_dags.operators import StageJobOperator
 )
 def ais_load() -> None:
     @task
-    def region_days(data_interval_start: Any = None) -> list[dict[str, str]]:
-        target = data_interval_start.date() - timedelta(days=ais_lag_days())
+    def region_days(
+        data_interval_start: Any = None, logical_date: Any = None, dag_run: Any = None
+    ) -> list[dict[str, str]]:
+        run_after = getattr(dag_run, "run_after", None)
+        target = reference_time(data_interval_start, logical_date, run_after).date() - timedelta(
+            days=ais_lag_days()
+        )
         days = [target - timedelta(days=n) for n in range(ais_extra_days() + 1)]
         with PipelineApi() as api:
             regions = [r["region_id"] for r in api.regions()]

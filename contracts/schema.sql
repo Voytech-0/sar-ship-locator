@@ -106,6 +106,17 @@ CREATE TABLE jobs (
 CREATE UNIQUE INDEX jobs_unique_active ON jobs (stage, input) WHERE status IN ('queued', 'running', 'succeeded');
 CREATE INDEX jobs_status_idx ON jobs (status, created_at);
 
+-- Detections worth a second look: confident, ship-sized, in open water, and no AIS vessel at their position.
+-- A candidate only, not proof (small vessels, AIS gaps and clutter remain possible). Thresholds are a starting
+-- point chosen from three real scenes; tighten or relax them as more validated data accumulates.
+CREATE OR REPLACE VIEW dark_ship_candidates AS
+SELECT d.id AS detection_id, d.scene_id, s.acquired_at, ST_X(d.geom) AS lon, ST_Y(d.geom) AS lat, d.geom,
+       d.confidence, d.length_m, d.detector_name, d.detector_version, d.chip_key
+FROM detections d
+JOIN validations v ON v.detection_id = d.id
+JOIN scenes s ON s.scene_id = d.scene_id
+WHERE v.label = 'unmatched' AND d.shore = 'open_water' AND d.length_m >= 100 AND d.confidence >= 0.9::real;
+
 -- Read-only role for Grafana.
 DO $$ BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'grafana_ro') THEN

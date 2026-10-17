@@ -37,7 +37,11 @@ class TooManyHitsError(ValueError):
 
 
 class CaCfarDetector:
-    """`Detector` implementation: name 'ca-cfar', version '1'."""
+    """`Detector` implementation, name 'ca-cfar'.
+
+    `version` labels a parameter set: bump it in the Region config when parameters change, so Detections
+    produced with different settings stay distinguishable.
+    """
 
     def __init__(
         self,
@@ -50,13 +54,14 @@ class CaCfarDetector:
         min_valid_fraction: float = 0.25,
         chunk_rows: int = 1024,
         max_hits: int = 2_000_000,
+        version: str = "1",
     ) -> None:
         if guard_cells < 0 or background_cells < 1:
             raise ValueError("guard_cells must be >= 0 and background_cells >= 1")
         if not 0 < pfa < 1:
             raise ValueError("pfa must be in (0, 1)")
         self.name = "ca-cfar"
-        self.version = "1"
+        self.version = version
         self.guard_cells = guard_cells
         self.background_cells = background_cells
         self.pfa = pfa
@@ -84,6 +89,7 @@ class CaCfarDetector:
             "enl": float,
             "merge_distance_px": int,
             "min_valid_fraction": float,
+            "version": str,
         }
         unknown = set(params) - set(known)
         if unknown:

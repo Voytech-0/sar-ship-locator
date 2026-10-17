@@ -33,7 +33,7 @@ SHIPS = [
 @pytest.fixture(scope="module")
 def detector() -> CaCfarDetector:
     cfg = yaml.safe_load(REGION_CONFIG.read_text())["detector"]
-    return CaCfarDetector.from_params(cfg["params"])
+    return CaCfarDetector.from_params({**cfg["params"], "version": cfg["version"]})
 
 
 def test_identity_and_params_from_region_config(detector: CaCfarDetector) -> None:
@@ -104,7 +104,9 @@ def test_clean_sea_has_no_detections(detector: CaCfarDetector) -> None:
     assert detector.detect(make_raster(img)) == []
 
 
-def test_land_is_excluded_by_water_mask(detector: CaCfarDetector) -> None:
+def test_land_is_excluded_by_water_mask() -> None:
+    # A loose detector on purpose: this tests the mask, and a strict one finds no land clutter to exclude.
+    detector = CaCfarDetector(guard_cells=8, background_cells=24, pfa=1e-6, min_cluster_pixels=3)
     rows, cols = 600, 800
     img = speckled_sea((rows, cols), seed=5)
     land = np.zeros((rows, cols), dtype=bool)

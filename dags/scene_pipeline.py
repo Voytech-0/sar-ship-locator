@@ -7,7 +7,7 @@ from typing import Any
 from airflow.sdk import dag, task, task_group
 
 from pipeline_dags.client import PipelineApi
-from pipeline_dags.common import START_DATE, default_args
+from pipeline_dags.common import SINCE_TEMPLATE, START_DATE, default_args
 from pipeline_dags.operators import StageJobOperator
 
 
@@ -37,7 +37,7 @@ def scene_pipeline() -> None:
     discover = StageJobOperator.partial(
         task_id="discover",
         stage="discover",
-        since="{{ (data_interval_start - macros.timedelta(days=2)).isoformat() }}",
+        since=SINCE_TEMPLATE,
     ).expand(region_id=region_ids())
 
     # A mapped group per Scene: one Scene failing fetch does not stop the others, and its detect is skipped.

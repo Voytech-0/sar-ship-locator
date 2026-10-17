@@ -33,24 +33,34 @@ Gate: `make ci` (ruff, strict mypy, about 315 tests, Docker needed); `dags/` is 
 - Object store: SeaweedFS, because MinIO no longer publishes public images (ADR-0005). Code and env use neutral names (`S3ObjectStore`, `STORE_*`).
 - Metrics: `/v1/metrics` (Prometheus scrapes that path), gauges refreshed at scrape time; `/v1/healthz` also checks the object store.
 
-## First real run (2026-10-17)
+## Study of the unmatched open-water Detections (2026-10-17)
 
-- Through Airflow: `scene_pipeline` found 2 scenes (15 Oct), fetched and detected them; `ais_load` loaded 12, 13 and 14 Oct (327,844 / 284,499 / 293,752 positions). The 15 Oct scenes correctly stay `detected` until their AIS day is published (ADR-0003).
-- I then ingested 12-14 Oct scenes through the API and the `validation` DAG validated all of them automatically. Across 5 scenes with detections: matched distance median 117 m, p90 290 m, max 497 m (gate 500 m).
-- On the 14 Oct 05:32:04 scene (the fixture's source): 474 Detections, 94 open water, 12 of those matched to AIS; 77 open-water Detections are unmatched. Whether they are false alarms, vessels without AIS, or both is not yet known; this is the first thing to study (look at the chips of unmatched open-water Detections).
-- Startup race handled by design: the first scheduled DAG run fired before the API was ready and recovered through Airflow's retries.
+First real run, 14 Oct scene (CA-CFAR v1, pfa 1e-6, min 3 px): 474 Detections, 94 open water, 12 AIS-matched, 77 unmatched. Looking at the chips of the unmatched ones:
+
+- Most of the strong unmatched Detections were the Great Belt Bridge (long diagonal deck streaks of 150-290 m and pylon dots at lat 55.34, lon 10.94-11.08): 63 of 181 remaining unmatched on the three studied scenes were on the bridge corridor.
+- Most weak ones (confidence under 0.5, median length 36 m) were sharp diagonal sea-state edges (the border between wind-sheltered calm water and rougher water) and speckle; they were also clustered (half had 2+ neighbours within 300 m).
+- What remains are small bright dots in groups (36-60 m: turbines, buoys or small boats) and a handful of large ship-shaped targets without AIS: the dark-ship candidates.
+
+Offline experiments (3 scenes, 12/13/14 Oct, real land): the edge-contrast idea did not separate matched from unmatched (median 1.34 vs 1.30) and was dropped. What worked: (a) a structures mask: OSM bridges, wind turbines and offshore platforms added to the land file as buffered polygons (80/75/100 m), unmatched 461 to 338 with no matched ship lost; (b) stricter detector settings: v2 = pfa 1e-10 and min 6 px keeps 47 of 50 matched ships and gives unmatched 109 with the structures mask (a 76 percent cut vs 461). Grid in the table of the experiment: pfa 1e-8..1e-12 x min 4..10 px; 1e-10/6 is the chosen knee (3 scenes only, so treat it as a starting point, not a tuned result).
+
+Re-run on a fresh stack with v2 and the structures mask: 14 Oct scene 474 to 157 Detections, 77 to 7 unmatched open-water; the `dark_ship_candidates` view (unmatched, open water, length 100 m or more, confidence 0.9 or more) lists 6 targets, all from the 12 Oct scene, matching the ship-like chips found by eye. A candidate is not proof (small vessels, AIS gaps, clutter remain possible).
+
+Detector `version` now labels a parameter set and comes from the Region config (`detector.version`, currently "2"); bump it when parameters change.
 
 ## Bugs found by running it for real (fixed)
 
 - Fixture TIFF was big-endian while real files are little-endian, which hid a fetcher byte-order bug.
-- `bytes_downloaded` was shared state on the fetcher, so concurrent fetches (2 API workers) corrupted each other's counts; now per call (regression test).
+- `bytes_downloaded` was shared state on the fetcher, so concurrent fetches corrupted each other's counts; now per call (regression test).
+- `fetch` computed the Region window time from the already rewritten `scenes.acquired_at`, so every retry shifted it again; the catalogue time now lives in `scenes.acquired_start` (migration 0003) and fetch always derives from it (regression test).
+- Manually triggered Airflow runs have no data interval and may have no logical date (only `run_after`); `ais_load` crashed and `scene_pipeline`'s `since` template would have; both now fall back correctly (tests). Scheduled runs were never affected.
 - Prometheus scraped `/metrics` but the API serves `/v1/metrics`.
 - SeaweedFS health check: the S3 gateway opens later than its master; the check now probes the S3 port.
+- Overpass answers 406 to anonymous clients: the loader sends a descriptive User-Agent and retries when the server is busy.
 
 ## Results worth knowing
 
 - **Partial download (ADR-0004):** only the VV rows covering the Region are fetched (up to 650 MB per scene, less for partial overlap). Real GRD TIFFs are little-endian with the directory at the end of the file.
-- **Land polygons:** `make land` builds `data/land/great-belt.geojson` (53 polygons, ODbL). On the fixture scene real land cuts Detections from 98 to 19: exactly the 3 known ships are open water and 16 are near-shore.
+- **Land polygons:** `make land` builds `data/land/great-belt.geojson` (53 OSM land polygons plus 650 structure polygons from Overpass, ODbL; needs network on first build). On the fixture crop real land cuts Detections from 98 to 19 with the old detector settings.
 - **Geolocation:** one affine over the full window is off by up to 197 m; the pipeline uses the GCP-based `geolocate`.
 - **API:** a succeeded Job dedupes forever on (stage, input) (the `discover` DAG sends a changing `since`). `detect` is allowed only on `fetched` Scenes.
 - **Airflow:** 3.3.2, deferrable operators (needs a triggerer). Admin password of the simple auth manager is printed in the api-server logs.
@@ -58,9 +68,9 @@ Gate: `make ci` (ruff, strict mypy, about 315 tests, Docker needed); `dags/` is 
 
 ## Open items
 
-1. **Sea-level sigma0 looks high:** open water median about -12.5 dB, expected about -20 to -25 dB. Probably a windy day, unverified; thermal noise is not subtracted. Matters for CFAR tuning.
-2. **Detection quality:** study the 77 unmatched open-water Detections of the 14 Oct scene (chips are in the object store, labels in `validations`); tune `pfa`, minimum cluster size and the near-shore handling with AIS-matched Detections as positives. This is also the start of the ML dataset (export command not written).
-3. **ADR-0003 vs API:** a second Detector version cannot run on a `detected` Scene via the API; deferred until the ML layer exists.
-4. **Docs:** amend ADR-0004 (IFD at end, little-endian) and PLAN/ADR-0001 (triggerer container; PLAN still lists MinIO/vv.tif in places).
-5. **Cleanup:** AIS CSV parsing is duplicated in `adapters/dma.py` and `algorithms/ais_dma.py`; unify. Remove merged worktrees under `.claude/worktrees/` and merged stream branches. `scripts/check_schema.sh` still uses the amd64-only `postgis/postgis:16-3.4`.
-6. **Not done:** per-Detection acquisition time for validation; Grafana panels checked against real data; ML dataset export; alerting beyond the two rules.
+1. **Sea-level sigma0 looks high:** open water median about -12.5 dB, expected about -20 to -25 dB. Probably a windy day, unverified; thermal noise is not subtracted.
+2. **Detection quality, next steps:** the 90 unmatched open-water Detections in the 12 Oct scene deserve a look (a large rough-sea or wind-shadow area?); GO-CFAR or a texture test for sea-state edges; thresholds of `dark_ship_candidates` are a starting point; add the candidates to a Grafana panel; export the labelled chips as the ML dataset (command not written).
+3. **Re-processing:** a `detect` cannot be re-run on a `detected` Scene via the API, and the raster is deleted after detect, so changing the detector means re-fetching (ADR-0003 vs API; deferred until the ML layer exists). Local dev: wipe the volumes (`docker volume rm sar_pg-data sar_store-data`).
+4. **Docs:** amend ADR-0004 (IFD at end, little-endian) and PLAN/ADR-0001 (triggerer container; PLAN still mentions MinIO/vv.tif in places).
+5. **Cleanup:** AIS CSV parsing is duplicated in `adapters/dma.py` and `algorithms/ais_dma.py`; unify. Remove merged worktrees under `.claude/worktrees/` and merged stream branches. `scripts/check_schema.sh` still uses the amd64-only `postgis/postgis:16-3.4`. One schemathesis subtest failed once in a full-suite run and did not reproduce in 5 reruns (watch for flakiness).
+6. **Not done:** per-Detection acquisition time for validation; Grafana panels checked against real data; alerting beyond the two rules.

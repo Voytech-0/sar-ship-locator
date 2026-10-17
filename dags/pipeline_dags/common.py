@@ -32,3 +32,21 @@ def ais_lag_days() -> int:
 def ais_extra_days() -> int:
     """Older days each run re-requests, so a day that was late last time gets picked up."""
     return int(os.environ.get("AIS_RETRY_DAYS", "2"))
+
+
+# A manually triggered run has no data interval in Airflow 3 (`data_interval_start` is None) and may have
+# no logical date either, only `run_after` (when it was triggered). Use the first one that exists.
+SINCE_TEMPLATE = (
+    "{{ ((data_interval_start or logical_date or dag_run.run_after)"
+    " - macros.timedelta(days=2)).isoformat() }}"
+)
+
+
+def reference_time(
+    data_interval_start: datetime | None, logical_date: datetime | None, run_after: datetime | None = None
+) -> datetime:
+    """The time a run is about: its data interval start, else its logical date, else when it was triggered."""
+    ref = data_interval_start or logical_date or run_after
+    if ref is None:
+        raise ValueError("run has no data interval, logical date or run_after")
+    return ref

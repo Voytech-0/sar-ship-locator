@@ -112,7 +112,9 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
         cfg = region_for_scene(ctx, request.scene_id)
         pinned = request.detector
         name = pinned.name if pinned else cfg.detector.name
-        params = {} if pinned and pinned.name != cfg.detector.name else cfg.detector.params
+        other = pinned is not None and pinned.name != cfg.detector.name
+        # the Region config's version labels its parameter set; it is stored with every Detection
+        params = {} if other else {**cfg.detector.params, "version": cfg.detector.version}
         if name not in services.detectors:
             raise PermanentError(f"unknown detector {name!r}")
         detector = services.detectors[name](params)

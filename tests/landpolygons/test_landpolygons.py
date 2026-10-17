@@ -6,15 +6,17 @@ import json
 import zipfile
 from pathlib import Path
 
+import httpx
 import numpy as np
 import pytest
 import shapely
 from pyogrio.raw import write  # type: ignore[import-untyped]
 from shapely.geometry import Polygon, box
 
-from contracts.protocols import ShoreClass
+from contracts.protocols import PermanentError, ShoreClass, TransientError
+from pipeline.adapters._retry import RetryPolicy
 from pipeline.algorithms import PolygonLandMask
-from pipeline.landpolygons import ATTRIBUTION, build, clip_land, main
+from pipeline.landpolygons import ATTRIBUTION, USER_AGENT, build, clip_land, fetch_structures, main
 
 REGION_YAML = Path(__file__).resolve().parents[2] / "contracts" / "region.greatbelt.yaml"
 # Great Belt Region box is lon 10.70..11.30, lat 55.00..55.70
@@ -75,7 +77,7 @@ def test_no_land_gives_no_polygons(tmp_path: Path) -> None:
 def test_output_feeds_the_land_mask_and_keeps_attribution(tmp_path: Path) -> None:
     zip_path = make_zip(tmp_path, [box(10.80, 55.20, 11.00, 55.40)])
     out = tmp_path / "land" / "great-belt.geojson"
-    assert build([REGION_YAML], out, zip_path, margin_deg=0.1) == 1
+    assert build([REGION_YAML], out, zip_path, margin_deg=0.1, structures=False) == 1
     assert json.loads(out.read_text())["attribution"] == ATTRIBUTION
 
     mask = PolygonLandMask.from_geojson(out, near_shore_m=300)
@@ -87,6 +89,95 @@ def test_output_feeds_the_land_mask_and_keeps_attribution(tmp_path: Path) -> Non
 def test_cli_writes_the_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     zip_path = make_zip(tmp_path, [box(10.80, 55.20, 11.00, 55.40)])
     out = tmp_path / "out.geojson"
-    main(["--region", str(REGION_YAML), "--out", str(out), "--zip", str(zip_path)])
+    main(["--region", str(REGION_YAML), "--out", str(out), "--zip", str(zip_path), "--no-structures"])
     assert "wrote 1 land polygons" in capsys.readouterr().out
     assert json.loads(out.read_text())["features"][0]["geometry"]["type"] == "Polygon"
+
+
+# ---- structures in the water (Overpass), with the network replaced by a mock transport ----
+
+OVERPASS_REPLY = {
+    "elements": [
+        {  # a bridge deck, two points ~1.3 km apart
+            "type": "way",
+            "tags": {"bridge": "yes", "highway": "motorway"},
+            "geometry": [{"lat": 55.34, "lon": 11.00}, {"lat": 55.34, "lon": 11.02}],
+        },
+        {
+            "type": "node",
+            "tags": {"power": "generator", "generator:source": "wind"},
+            "lat": 55.50,
+            "lon": 10.90,
+        },
+        {"type": "node", "tags": {"man_made": "offshore_platform"}, "lat": 55.10, "lon": 11.20},
+        {
+            "type": "way",
+            "tags": {"bridge": "yes", "highway": "path"},
+            "geometry": [{"lat": 55.0, "lon": 11.0}],
+        },
+    ]
+}
+
+
+def overpass_client(replies: list[httpx.Response], seen: list[httpx.Request] | None = None) -> httpx.Client:
+    queue = list(replies)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if seen is not None:
+            seen.append(request)
+        return queue.pop(0)
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+NO_WAIT = RetryPolicy(attempts=4, base_delay=0.0, sleep=lambda _: None)
+
+
+def test_structures_become_buffered_polygons() -> None:
+    client = overpass_client([httpx.Response(200, json=OVERPASS_REPLY)])
+    polys = fetch_structures(REGION_RING, 0.1, client=client, retry=NO_WAIT)
+    assert len(polys) == 3  # bridge, turbine, platform; the one-point way is ignored
+
+    def contains(lon: float, lat: float) -> bool:
+        return any(p.contains(shapely.Point(lon, lat)) for p in polys)
+
+    assert contains(11.01, 55.34) and contains(
+        11.01, 55.3405
+    )  # on the deck and ~55 m beside it (80 m buffer)
+    assert not contains(11.01, 55.342)  # ~220 m away
+    assert contains(10.90, 55.50) and contains(11.20, 55.10)
+    assert not contains(11.00, 55.0)
+
+
+def test_busy_overpass_is_retried_and_identifies_itself() -> None:
+    seen: list[httpx.Request] = []
+    busy = httpx.Response(502, text="# 502 Gateway Timeout: server at capacity")
+    client = overpass_client([busy, busy, httpx.Response(200, json=OVERPASS_REPLY)], seen)
+    client.headers["User-Agent"] = USER_AGENT
+    assert len(fetch_structures(REGION_RING, 0.1, client=client, retry=NO_WAIT)) == 3
+    assert len(seen) == 3
+    assert "bridge" in seen[0].content.decode() and "generator%3Asource" in seen[0].content.decode()
+
+
+def test_overpass_rejecting_the_query_is_permanent() -> None:
+    client = overpass_client([httpx.Response(400, text="parse error")])
+    with pytest.raises(PermanentError, match="rejected"):
+        fetch_structures(REGION_RING, 0.1, client=client, retry=NO_WAIT)
+
+
+def test_overpass_down_for_good_is_transient() -> None:
+    client = overpass_client([httpx.Response(503)] * 4)
+    with pytest.raises(TransientError):
+        fetch_structures(REGION_RING, 0.1, client=client, retry=NO_WAIT)
+
+
+def test_structures_are_masked_like_land(tmp_path: Path) -> None:
+    zip_path = make_zip(tmp_path, [box(10.80, 55.20, 11.00, 55.30)])
+    out = tmp_path / "land.geojson"
+    client = overpass_client([httpx.Response(200, json=OVERPASS_REPLY)])
+    # build() takes the client so no network is used
+    assert build([REGION_YAML], out, zip_path, margin_deg=0.1, structures=True, client=client) == 4
+    mask = PolygonLandMask.from_geojson(out, near_shore_m=300)
+    assert mask.classify((11.01, 55.34)) is ShoreClass.ON_LAND  # the bridge deck
+    assert mask.classify((11.01, 55.3425)) is ShoreClass.NEAR_SHORE  # ~200 m beyond the buffer
+    assert mask.classify((11.10, 55.45)) is ShoreClass.OPEN_WATER

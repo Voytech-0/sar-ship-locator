@@ -10,7 +10,7 @@ Needs Docker and a free [Copernicus Data Space](https://dataspace.copernicus.eu)
 
 1. Create S3 keys at https://eodata-s3keysmanager.dataspace.copernicus.eu/ (the secret is shown once).
 2. `./scripts/init_env.sh` creates `.env` with generated secrets; put the two keys in `CDSE_S3_ACCESS_KEY` and `CDSE_S3_SECRET_KEY`.
-3. `docker compose up -d --build --wait`. The first start downloads the OpenStreetMap land polygons (~0.9 GB, once); a later start takes about 30 seconds.
+3. `docker compose up -d --build --wait`. The first start downloads the OpenStreetMap land polygons (~0.9 GB, once) and queries the public Overpass API for bridges, wind turbines and platforms (can take a few minutes if Overpass is busy); a later start takes about 30 seconds.
 
 | Service | URL |
 |---|---|
@@ -33,6 +33,7 @@ Airflow only orchestrates; pipeline-api runs every stage as an async job ┘   P
 
 - Detections appear within minutes of a Scene being published. AIS archives arrive about 3 days late, so Validation (Matched / Unmatched / Ambiguous) runs later, triggered by an Airflow Asset (ADR-0003).
 - Only the rows of the VV band covering the Region are downloaded, about 400 MB of an 883 MB file (ADR-0004).
+- Bridges, wind turbines and offshore platforms are masked like land; without that they were a third of the false alarms. Unmatched, confident, ship-sized open-water Detections appear in the `dark_ship_candidates` view (candidates only, not proof).
 
 ## Where to look
 

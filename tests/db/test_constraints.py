@@ -266,3 +266,31 @@ def test_failed_job_must_record_an_error(db: Conn) -> None:
 def test_job_stage_is_an_enum(db: Conn) -> None:
     with pytest.raises(errors.InvalidTextRepresentation):
         db.execute("INSERT INTO jobs (stage, input) VALUES ('load', '{}')")
+
+
+def test_dark_ship_candidates_view_keeps_only_confident_large_unmatched_open_water(db: Conn) -> None:
+    add_scene(db)
+    cases: dict[str, tuple[str, dict[str, Any]]] = {
+        "candidate": ("unmatched", {}),
+        "matched": ("matched", {}),
+        "ambiguous": ("ambiguous", {}),
+        "short": ("unmatched", {"length_m": 60.0}),
+        "weak": ("unmatched", {"confidence": 0.7}),
+        "near shore": ("unmatched", {"shore": "near_shore"}),
+    }
+    ids = {}
+    for name, (label, over) in cases.items():
+        det = add_detection(db, **over)
+        ids[det] = name
+        mmsi, dist = (219000001, 50.0) if label == "matched" else (None, None)
+        db.execute(
+            "INSERT INTO validations (detection_id, label, matched_mmsi, match_distance_m, gate_m) "
+            "VALUES (%s, %s::match_label, %s, %s, 500)",
+            (det, label, mmsi, dist),
+        )
+    add_detection(db)  # never validated: not a candidate either
+    rows = db.execute(
+        "SELECT detection_id::text, scene_id, confidence, lon FROM dark_ship_candidates"
+    ).fetchall()
+    assert [ids[str(r[0])] for r in rows] == ["candidate"]
+    assert rows[0][1] == "s" and rows[0][3] == 0.5

@@ -12,12 +12,14 @@ discovery:
   lookback_days: 7
 detector:
   name: ca-cfar
-  version: "1"
+  # v1: pfa 1e-6, min 3 px. v2 (chosen on three real scenes, see AGENTS.md): keeps 47 of 50 AIS-matched ships
+  # and cuts unmatched open-water Detections by about 76 percent.
+  version: "2"
   params:
     guard_cells: 8
     background_cells: 24
-    pfa: 1.0e-6
-    min_cluster_pixels: 3
+    pfa: 1.0e-10
+    min_cluster_pixels: 6
 land_mask:
   near_shore_m: 300
 validation:
