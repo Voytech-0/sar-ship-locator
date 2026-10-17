@@ -1,0 +1,27 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+
+  # Read-only access to the application database. `grafana` must be a LOGIN role that is a member of
+  # `grafana_ro` (contracts/schema.sql creates grafana_ro as NOLOGIN), created by the postgis init step.
+  - name: PostGIS
+    uid: postgis
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: postgis:5432
+    user: grafana
+    editable: false
+    jsonData:
+      database: sar
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+    secureJsonData:
+      password: ${GRAFANA_DB_PASSWORD}
