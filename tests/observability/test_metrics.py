@@ -53,7 +53,10 @@ def _sample(name: str, **labels: str) -> float | None:
 def test_exposition_is_valid_and_lists_every_family() -> None:
     metrics.set_ais_lag("exposition-test", 3)
     text = metrics.render().decode()
-    families = {f.name: f.type for f in text_string_to_metric_families(text)}
+    # once a labelled series exists, prometheus_client also emits `<name>_created` timestamp gauges
+    families = {
+        f.name: f.type for f in text_string_to_metric_families(text) if not f.name.endswith("_created")
+    }
     # parser reports counters without `_total`
     expected = {s.name.removesuffix("_total"): s.type for s in metric_specs()}
     assert families == expected
