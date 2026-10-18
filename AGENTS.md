@@ -12,7 +12,7 @@ Automated pipeline: Sentinel-1 GRD scenes of the Great Belt are ingested daily, 
 - Never print or commit secrets. Credentials live in the uncommitted `.env` (S3 keys only are needed; the CDSE username and password are not).
 - Build against `contracts/`. Do not change a contract to suit one component: record the issue below and get a decision.
 - `make ci` runs lint, mypy, tests and the schema check. Tests that need Docker skip when it is missing.
-- Not yet verified on GitHub: the CI workflow has never run.
+- CI: all four jobs (python, schema, dags, compose) passed on GitHub on first run (PR #1, 2026-10-18).
 
 ## Layout
 
