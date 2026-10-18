@@ -51,6 +51,8 @@ Dark-ship candidates after all corrections (detector v3, 9 Scenes): 4, all in th
 
 Detector v3 (2026-10-18): v2 plus `length_bias_m` 20. The cluster extent includes the sensor's point spread; against the AIS length of 59 matched ships the v2 median absolute error was 22 m (SAR/AIS ratio 1.19), v3 15 m (ratio 0.99). Fitted on those 59 ships with one constant (the quadrature form gave the same 15 m), so treat 20 m as a starting point. `dark_ship_candidates`: 4 for both versions. `validate` now validates each detector version on its own (before, an AIS track could be claimed by only one version's Detection, which halved the matches of a re-detected Scene). Site export shows the Scene's newest detector version; the match dashboard's version variable defaults to the newest.
 
+False-alarm analysis (2026-10-18, detector v3, 9 Scenes, open water: 59 matched, 141 unmatched, 1 ambiguous; 110 of the unmatched are in one Scene, 12 Oct evening): unmatched Detections are short and weak (median 25 m, confidence 0.62) against matched (119 m, 0.97). Keeping only Detections with confidence 0.7 or more and length 30 m or more leaves 53 of 59 matched (all ships of 30 m and longer, the 6 lost are shorter) and 23 of 141 unmatched; 0.9 and 50 m leaves 43 and 4. A post-filter or a v4 parameter (`min_length_m`, confidence floor) would cut false alarms by about 80 percent at no loss for ships of 30 m and longer. Not applied: it changes the detector contract-visible output and the 30 m limit comes from the same 59 ships, so it is a decision.
+
 Detector `version` now labels a parameter set and comes from the Region config (`detector.version`, currently "2"); bump it when parameters change.
 
 ## Dataset export (2026-10-17)
