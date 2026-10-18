@@ -55,9 +55,9 @@
     "retention": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["delete_raster_after_detect"],
+      "required": ["raster_days"],
       "properties": {
-        "delete_raster_after_detect": {"type": "boolean"}
+        "raster_days": {"type": "integer", "minimum": 0, "description": "Days to keep the cropped raster after the Scene's last stage (enables re-detection); 0 deletes it right after detect."}
       }
     }
   }

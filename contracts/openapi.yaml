@@ -12,6 +12,13 @@ info:
 
     **Scene status machine.** `discovered -> fetched -> detected -> validated`; any stage may move a Scene to
     `failed` (see `failed_stage`). Re-running a stage on a `failed` Scene resets it on success.
+
+    **Re-processing.** `detect` also accepts a `detected` or `validated` Scene while its raster is still stored
+    (`retention.raster_days`), and `fetch` a `detected` or `validated` Scene whose raster is gone; any other
+    case is `409`. The Scene then becomes `detected` (or `fetched`) again and needs `validate` again.
+    Detections are kept per detector version, so a new version adds rows instead of replacing the old ones.
+    A `detect` request without `detector` is pinned to the Region's configured detector name and version, so
+    bumping `detector.version` in the Region config makes a new Job instead of returning the old one.
 servers:
   - url: http://pipeline-api:8000/v1
 tags:
@@ -58,7 +65,7 @@ paths:
     post:
       tags: [stages]
       operationId: submitDetect
-      summary: Run a Detector on a `fetched` Scene, store Detections and Chips. Scene becomes `detected`.
+      summary: Run a Detector on a Scene with a stored raster, store Detections and Chips. Scene becomes `detected`.
       requestBody:
         required: true
         content:

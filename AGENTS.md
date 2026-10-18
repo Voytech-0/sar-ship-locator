@@ -22,7 +22,7 @@ Automated pipeline: Sentinel-1 GRD scenes of the Great Belt are ingested daily, 
 
 Everything runs: `docker compose up -d --build --wait` starts the whole system (PostGIS, migrations, SeaweedFS object store, land polygon init job, pipeline-api, Prometheus, Grafana, Airflow) in about 30 s once the land file exists. The first real run through Airflow ingested real Sentinel-1 scenes end to end. CI has jobs for Python (lint, mypy, tests incl. Docker), schema, `dags/`, and a compose config and image build.
 
-Gate: `make ci` (ruff, strict mypy, about 354 tests, Docker needed); `dags/` is its own uv project (`cd dags && uv sync && uv run pytest`, 43 tests).
+Gate: `make ci` (ruff, strict mypy, about 360 tests, Docker needed); `dags/` is its own uv project (`cd dags && uv sync && uv run pytest`, 43 tests).
 
 ## How the pieces fit
 
@@ -80,7 +80,7 @@ Grafana has a third dashboard, Match analysis (`sar-matches`): outcome counts, m
 - **Partial download (ADR-0004):** only the VV rows covering the Region are fetched (up to 650 MB per scene, less for partial overlap). Real GRD TIFFs are little-endian with the directory at the end of the file.
 - **Land polygons:** `make land` builds `data/land/great-belt.geojson` (53 OSM land polygons plus 650 structure polygons from Overpass, ODbL; needs network on first build). On the fixture crop real land cuts Detections from 98 to 19 with the old detector settings.
 - **Geolocation:** one affine over the full window is off by up to 197 m; the pipeline uses the GCP-based `geolocate`.
-- **API:** a succeeded Job dedupes forever on (stage, input) (the `discover` DAG sends a changing `since`). `detect` is allowed only on `fetched` Scenes.
+- **API:** a succeeded Job dedupes forever on (stage, input) (the `discover` DAG sends a changing `since`). `detect` needs a stored raster (see Open items 3).
 - **Airflow:** 3.3.2, deferrable operators (needs a triggerer). Admin password of the simple auth manager is printed in the api-server logs.
 - **Observability:** Grafana dashboards and Prometheus are up in the stack; rate/increase panels still unproven (needs a few minutes of real data).
 
@@ -88,7 +88,7 @@ Grafana has a third dashboard, Match analysis (`sar-matches`): outcome counts, m
 
 1. **Sea-level sigma0 looks high:** open water median about -12.5 dB, expected about -20 to -25 dB. Probably a windy day, unverified; thermal noise is not subtracted.
 2. **Detection quality, next steps:** the 90 unmatched open-water Detections in the 12 Oct scene deserve a look (a large rough-sea or wind-shadow area?); GO-CFAR or a texture test for sea-state edges; thresholds of `dark_ship_candidates` are a starting point; add the candidates to a Grafana panel; the ML dataset export exists (below); train a first classifier on it.
-3. **Re-processing:** a `detect` cannot be re-run on a `detected` Scene via the API, and the raster is deleted after detect, so changing the detector means re-fetching (ADR-0003 vs API; deferred until the ML layer exists). Local dev: wipe the volumes (`docker volume rm sar_pg-data sar_store-data`).
+3. **Re-processing:** done (2026-10-18). The raster is kept `retention.raster_days` (14) after the last stage; `detect` runs again on `detected`/`validated` Scenes while it exists (new Job per `detector.version`, old versions' Detections stay), `fetch` runs again once it is gone. Then `validate` again.
 4. **Docs:** done (ADR-0004, ADR-0001, PLAN amended 2026-10-18).
 5. **Cleanup:** done except flakiness: one schemathesis subtest failed once in a full-suite run and did not reproduce in 5 reruns (watch for it). AIS parsing now lives only in `algorithms/ais_dma.py` (`adapters/dma.py` downloads and unzips, then calls it); static vessel data goes to `ais_vessels`.
 6. **Not done:** per-Detection acquisition time for validation (match distance grows with vessel speed, so this is the likely biggest accuracy gain); Grafana panels checked against real data; alerting beyond the two rules.

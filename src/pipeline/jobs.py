@@ -26,6 +26,8 @@ from pipeline.api.config import AppConfig
 from pipeline.api.models import (
     AisLoadRequest,
     AisLoadResult,
+    DetectorRef,
+    DetectRequest,
     FetchResult,
     Job,
     Stage,
@@ -58,7 +60,8 @@ def job_from_row(row: Row) -> Job:
 
 def _scene_state(conn: db.Conn, scene_id: str) -> Row:
     row = conn.execute(
-        "SELECT status::text AS status, failed_stage::text AS failed_stage FROM scenes WHERE scene_id = %s",
+        "SELECT status::text AS status, failed_stage::text AS failed_stage, raster_key FROM scenes"
+        " WHERE scene_id = %s",
         (scene_id,),
     ).fetchone()
     if row is None:
@@ -71,7 +74,12 @@ def _check_scene_ready(conn: db.Conn, stage: Stage, scene_id: str) -> None:
     state = _scene_state(conn, scene_id)
     step = SCENE_STEPS[stage]
     is_retry = state["status"] == "failed" and state["failed_stage"] == stage.value
-    if state["status"] != step.required.value and not is_retry:
+    # A processed Scene can be detected again while its raster is kept, and fetched again once it is gone.
+    redo = stage in (Stage.DETECT, Stage.FETCH) and state["status"] in ("detected", "validated")
+    if redo and (state["raster_key"] is not None) != (stage is Stage.DETECT):
+        has = "no longer" if stage is Stage.DETECT else "still"
+        raise WrongStatusError(f"scene {scene_id!r} is {state['status']} and {has} has a stored raster")
+    if state["status"] != step.required.value and not is_retry and not redo:
         where = f" (failed in {state['failed_stage']})" if state["status"] == "failed" else ""
         raise WrongStatusError(
             f"scene {scene_id!r} is {state['status']}{where}; stage {stage.value} needs {step.required.value}"
@@ -97,6 +105,15 @@ def submit_job(database: Database, config: AppConfig, stage: Stage, request: Bas
             region_id: str = request.region_id  # type: ignore[attr-defined]
             if region_id not in config.regions:
                 raise NotFoundError(f"unknown region {region_id!r}")
+        if stage is Stage.DETECT and scene_id is not None and getattr(request, "detector", None) is None:
+            # Pin the Region's detector version so a new version is a new Job instead of a dedupe hit.
+            region = conn.execute("SELECT region_id FROM scenes WHERE scene_id = %s", (scene_id,)).fetchone()
+            det = config.regions[region["region_id"]].detector if region else None
+            if det is not None:
+                input_ = {**input_, "detector": {"name": det.name, "version": det.version}}
+                request = DetectRequest(
+                    scene_id=scene_id, detector=DetectorRef(name=det.name, version=det.version)
+                )
         existing = db.find_live_job(conn, stage.value, input_)
         if existing is not None:
             return job_from_row(existing), False
