@@ -431,10 +431,13 @@ WHERE $__timeFilter""",
 )
 
 # Matched Detections whose AIS vessel has a known length: how well does the SAR length agree?
-_LENGTH_FROM = _MATCH_FROM.replace(
-    "WHERE $__timeFilter",
-    "JOIN ais_vessels av ON av.mmsi = v.matched_mmsi\nWHERE $__timeFilter",
-) + "\n  AND v.label = 'matched' AND d.length_m IS NOT NULL AND av.length_m IS NOT NULL"
+_LENGTH_FROM = (
+    _MATCH_FROM.replace(
+        "WHERE $__timeFilter",
+        "JOIN ais_vessels av ON av.mmsi = v.matched_mmsi\nWHERE $__timeFilter",
+    )
+    + "\n  AND v.label = 'matched' AND d.length_m IS NOT NULL AND av.length_m IS NOT NULL"
+)
 LENGTH_AGREEMENT = (
     "SELECT count(*) AS ships,\n"
     "       percentile_cont(0.5) WITHIN GROUP (ORDER BY d.length_m / av.length_m) AS median_sar_over_ais,\n"
@@ -447,8 +450,9 @@ LENGTH_BY_AIS_CLASS = (
     "            WHEN av.length_m < 120 THEN '2: 60-120 m' WHEN av.length_m < 200 THEN '3: 120-200 m'\n"
     "            ELSE '4: 200 m or longer' END AS ais_length_class,\n"
     "       percentile_cont(0.5) WITHIN GROUP (ORDER BY av.length_m) AS ais_length_m,\n"
-    "       percentile_cont(0.5) WITHIN GROUP (ORDER BY d.length_m) AS sar_length_m\n" + _LENGTH_FROM +
-    "\nGROUP BY 1 ORDER BY 1"
+    "       percentile_cont(0.5) WITHIN GROUP (ORDER BY d.length_m) AS sar_length_m\n"
+    + _LENGTH_FROM
+    + "\nGROUP BY 1 ORDER BY 1"
 )
 
 MATCH_OUTCOMES = (
