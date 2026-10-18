@@ -18,3 +18,23 @@ groups:
         annotations:
           summary: "AIS archive for {{ $labels.region_id }} is more than 7 days behind"
           description: "Validation is blocked until AIS days are loaded; the usual lag is about 3 days."
+
+      - alert: SceneFailed
+        expr: sar_scenes{status="failed"} > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} Scene(s) of {{ $labels.region_id }} are in status failed"
+          description: "A stage gave up on a Scene (see scenes.failed_stage and scenes.error); fix the cause and submit the stage again."
+
+      - alert: StageJobsFailing
+        expr: |
+          sum by (stage) (increase(sar_jobs_total{status="failed"}[6h]))
+            / clamp_min(sum by (stage) (increase(sar_jobs_total[6h])), 1) > 0.5
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "More than half of the {{ $labels.stage }} Jobs failed in the last 6 hours"
+          description: "Check the pipeline-api logs and the source status (CDSE, DMA); Airflow retries are not getting through."

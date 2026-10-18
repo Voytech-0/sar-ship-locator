@@ -16,6 +16,16 @@ tests:
         values: "3x400"
       - series: 'sar_ais_lag_days{region_id="late"}'
         values: "10x400"
+      - series: 'sar_scenes{region_id="great-belt",status="failed"}'
+        values: "0x20 2x400"
+      - series: 'sar_jobs_total{stage="fetch",status="failed"}'
+        values: "0+10x400"
+      - series: 'sar_jobs_total{stage="fetch",status="succeeded"}'
+        values: "0+1x400"
+      - series: 'sar_jobs_total{stage="detect",status="failed"}'
+        values: "0x400"
+      - series: 'sar_jobs_total{stage="detect",status="succeeded"}'
+        values: "0+5x400"
     alert_rule_test:
       - eval_time: 300h
         alertname: NoNewSceneIn7Days
@@ -38,3 +48,25 @@ tests:
             exp_annotations:
               summary: "AIS archive for late is more than 7 days behind"
               description: "Validation is blocked until AIS days are loaded; the usual lag is about 3 days."
+      - eval_time: 30h
+        alertname: SceneFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              region_id: great-belt
+              status: failed
+            exp_annotations:
+              summary: "2 Scene(s) of great-belt are in status failed"
+              description: "A stage gave up on a Scene (see scenes.failed_stage and scenes.error); fix the cause and submit the stage again."
+      - eval_time: 10h
+        alertname: SceneFailed
+        exp_alerts: []
+      - eval_time: 50h
+        alertname: StageJobsFailing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              stage: fetch
+            exp_annotations:
+              summary: "More than half of the fetch Jobs failed in the last 6 hours"
+              description: "Check the pipeline-api logs and the source status (CDSE, DMA); Airflow retries are not getting through."
