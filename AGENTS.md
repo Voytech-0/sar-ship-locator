@@ -45,6 +45,8 @@ Offline experiments (3 scenes, 12/13/14 Oct, real land): the edge-contrast idea 
 
 Re-run on a fresh stack with v2 and the structures mask: 14 Oct scene 474 to 157 Detections, 77 to 7 unmatched open-water; the `dark_ship_candidates` view (unmatched, open water, length 100 m or more, confidence 0.9 or more) lists 6 targets, all from the 12 Oct scene, matching the ship-like chips found by eye. A candidate is not proof (small vessels, AIS gaps, clutter remain possible).
 
+Dark-ship candidates after all corrections (detector v3, 9 Scenes): 4, all in the 12 Oct evening Scene (105, 121, 207 and 109 m SAR length). None has an AIS track within 1.1 km in the image plane (nearest 1.1, 3.8, 6.1 and 2.8 km), so no matching tweak explains them; the one at 55.3231 N 11.0001 E has no AIS report at all within 2 km, the others lie in busy lanes. Still candidates, not proof (small vessels, AIS gaps, clutter).
+
 Detector v3 (2026-10-18): v2 plus `length_bias_m` 20. The cluster extent includes the sensor's point spread; against the AIS length of 59 matched ships the v2 median absolute error was 22 m (SAR/AIS ratio 1.19), v3 15 m (ratio 0.99). Fitted on those 59 ships with one constant (the quadrature form gave the same 15 m), so treat 20 m as a starting point. `dark_ship_candidates`: 4 for both versions. `validate` now validates each detector version on its own (before, an AIS track could be claimed by only one version's Detection, which halved the matches of a re-detected Scene). Site export shows the Scene's newest detector version; the match dashboard's version variable defaults to the newest.
 
 Detector `version` now labels a parameter set and comes from the Region config (`detector.version`, currently "2"); bump it when parameters change.
