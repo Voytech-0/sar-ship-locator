@@ -35,8 +35,8 @@ from pipeline.algorithms.sar_geometry import image_displacement_m
 
 _KNOT_MS = 0.514444
 
-# (dt seconds relative to acquisition, lon, lat, sog_knots, cog_deg)
-_Sample = tuple[float, float, float, float | None, float | None]
+# (dt seconds relative to acquisition, lon, lat, sog_knots, cog_deg, the report itself)
+_Sample = tuple[float, float, float, float | None, float | None, AisPosition]
 
 
 class NearestNeighbourValidator:
@@ -105,33 +105,36 @@ class NearestNeighbourValidator:
         self, positions: Iterable[AisPosition], acquired_at: datetime
     ) -> dict[int, tuple[float, float]]:
         """Position of every trustworthy track at `acquired_at`, keyed by MMSI."""
-        return {m: (lon, lat) for m, (lon, lat, _, _) in self._tracks(positions, acquired_at).items()}
+        return {m: (t[0], t[1]) for m, t in self._tracks(positions, acquired_at).items()}
 
     def tracks_in_image(
         self, positions: Iterable[AisPosition], acquired_at: datetime, geometry: SarGeometry | None
     ) -> dict[int, tuple[float, float]]:
         """Where every trustworthy track appears in the SAR image (Doppler and elevation displacements)."""
         out: dict[int, tuple[float, float]] = {}
-        for mmsi, (lon, lat, ve, vn) in self._tracks(positions, acquired_at).items():
+        for mmsi, (lon, lat, ve, vn, centre) in self._tracks(positions, acquired_at).items():
+            m_lon, m_lat = meters_per_degree(lat)
+            lon, lat = lon + centre[0] / m_lon, lat + centre[1] / m_lat  # the antenna is not the hull centre
             if geometry is not None:
                 de, dn = image_displacement_m(geometry, ve, vn)
-                m_lon, m_lat = meters_per_degree(lat)
                 lon, lat = lon + de / m_lon, lat + dn / m_lat
             out[mmsi] = (lon, lat)
         return out
 
     def _tracks(
         self, positions: Iterable[AisPosition], acquired_at: datetime
-    ) -> dict[int, tuple[float, float, float, float]]:
-        """(lon, lat, east m/s, north m/s) of every trustworthy track at `acquired_at`; no SOG/COG = 0 m/s."""
+    ) -> dict[int, tuple[float, float, float, float, tuple[float, float]]]:
+        """(lon, lat, east m/s, north m/s, (east, north) metres from the antenna to the hull centre) of every
+        trustworthy track at `acquired_at`. No SOG/COG means 0 m/s; no heading or dimensions means the
+        antenna is taken as the hull centre."""
         t0 = acquired_at.timestamp()
         samples: dict[int, list[_Sample]] = defaultdict(list)
         for p in positions:
             dt = p.ts.timestamp() - t0
             if abs(dt) <= self.max_gap_s:  # memory stays bounded when given a whole day of AIS
-                samples[p.mmsi].append((dt, p.position[0], p.position[1], p.sog_knots, p.cog_deg))
+                samples[p.mmsi].append((dt, p.position[0], p.position[1], p.sog_knots, p.cog_deg, p))
 
-        out: dict[int, tuple[float, float, float, float]] = {}
+        out: dict[int, tuple[float, float, float, float, tuple[float, float]]] = {}
         for mmsi, rows in samples.items():
             rows.sort(key=lambda s: s[0])
             before = [s for s in rows if s[0] <= 0]
@@ -150,13 +153,13 @@ class NearestNeighbourValidator:
             else:
                 continue
             assert nearest is not None
-            out[mmsi] = (lon, lat, *_velocity(nearest))
+            out[mmsi] = (lon, lat, *_velocity(nearest), _centre_offset(nearest))
         return out
 
 
 def _velocity(sample: _Sample) -> tuple[float, float]:
     """(east, north) m/s from a sample's SOG/COG; (0, 0) when either is missing."""
-    _, _, _, sog, cog = sample
+    _, _, _, sog, cog, _ = sample
     if sog is None or cog is None:
         return 0.0, 0.0
     bearing = math.radians(cog)
@@ -165,10 +168,32 @@ def _velocity(sample: _Sample) -> tuple[float, float]:
 
 def _dead_reckon(sample: _Sample) -> tuple[float, float]:
     """Move a sample to acquisition time (dt = sample time - acquisition time) along its COG at its SOG."""
-    dt, lon, lat, sog, cog = sample
+    dt, lon, lat, sog, cog, _ = sample
     if sog is None or cog is None:
         return lon, lat
     dist_m = sog * _KNOT_MS * (-dt)
     m_lon, m_lat = meters_per_degree(lat)
     bearing = math.radians(cog)
     return lon + dist_m * math.sin(bearing) / m_lon, lat + dist_m * math.cos(bearing) / m_lat
+
+
+def _centre_offset(sample: _Sample) -> tuple[float, float]:
+    """(east, north) metres from the reported antenna position to the hull centre.
+
+    The antenna sits aft on most ships (typically near the bridge) while the SAR return is centred on the
+    hull, which put Detections of large ships 40-60 m ahead of their AIS position. Needs the heading (or
+    the course) and the four antenna distances; otherwise the antenna is taken as the centre.
+    """
+    p = sample[5]
+    bearing = p.heading if p.heading is not None else p.cog_deg
+    if bearing is None or None in (p.to_bow_m, p.to_stern_m, p.to_port_m, p.to_starboard_m):
+        return 0.0, 0.0
+    assert p.to_bow_m is not None and p.to_stern_m is not None
+    assert p.to_port_m is not None and p.to_starboard_m is not None
+    forward = (p.to_bow_m - p.to_stern_m) / 2
+    starboard = (p.to_starboard_m - p.to_port_m) / 2
+    b = math.radians(bearing)
+    return (
+        forward * math.sin(b) + starboard * math.cos(b),
+        forward * math.cos(b) - starboard * math.sin(b),
+    )

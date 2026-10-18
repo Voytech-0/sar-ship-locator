@@ -372,6 +372,9 @@ VESSEL_FIELDS = (
 )
 
 
+ANTENNA_FIELDS = ("to_bow_m", "to_stern_m", "to_port_m", "to_starboard_m")
+
+
 def upsert_ais_vessels(conn: Conn, vessels: Sequence[Row]) -> None:
     """Static vessel data (`mmsi` plus the optional `VESSEL_FIELDS`); non-empty values win."""
     if not vessels:

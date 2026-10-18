@@ -236,8 +236,17 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
             dets = db.list_detection_points(conn, request.scene_id)
             positions = db.list_ais_positions(conn, when - margin, when + margin)
             stored = db.get_scene_geometry(conn, request.scene_id)
+            hulls = {v["mmsi"]: v for v in db.list_ais_vessels(conn, sorted({p["mmsi"] for p in positions}))}
         ais = [
-            AisPosition(p["mmsi"], p["ts"], (p["lon"], p["lat"]), p["sog_knots"], p["cog_deg"], p["heading"])
+            AisPosition(
+                p["mmsi"],
+                p["ts"],
+                (p["lon"], p["lat"]),
+                p["sog_knots"],
+                p["cog_deg"],
+                p["heading"],
+                **{f: hulls.get(p["mmsi"], {}).get(f) for f in db.ANTENNA_FIELDS},
+            )
             for p in positions
         ]
         geometry = SarGeometry(**stored) if stored else None

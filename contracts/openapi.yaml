@@ -350,7 +350,7 @@ components:
           required: [name]
           properties:
             name: {type: string, examples: [ca-cfar]}
-            version: {type: string, examples: ['1']}
+            version: {type: [string, 'null'], examples: ['1']}  # null = the Region's configured version
 
     AisLoadRequest:
       type: object

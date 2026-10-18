@@ -223,3 +223,44 @@ def test_a_ship_shifted_by_the_sea_height_matches_with_the_geometry() -> None:
     assert plain[0].label == MatchLabel.UNMATCHED
     assert corrected[0].label == MatchLabel.MATCHED
     assert corrected[0].match_distance_m == pytest.approx(0, abs=3)
+
+
+def hull(
+    mmsi: int, heading: int | None, bow: float, stern: float, port: float, starboard: float
+) -> AisPosition:
+    return AisPosition(
+        mmsi,
+        ACQUIRED,
+        (LON, LAT),
+        heading=heading,
+        to_bow_m=bow,
+        to_stern_m=stern,
+        to_port_m=port,
+        to_starboard_m=starboard,
+    )
+
+
+def test_ais_reference_point_is_the_hull_centre_not_the_antenna() -> None:
+    # 200 m ship heading east, antenna 40 m from the stern and 160 m from the bow: the centre is 60 m ahead
+    track = [hull(219000001, 90, bow=160, stern=40, port=15, starboard=15)]
+    ahead = [det("a", east_m=60)]
+    assert NearestNeighbourValidator().validate(ahead, track, ACQUIRED, 30)[0].label == MatchLabel.MATCHED
+    behind = [det("a", east_m=-60)]
+    assert NearestNeighbourValidator().validate(behind, track, ACQUIRED, 30)[0].label == MatchLabel.UNMATCHED
+
+
+def test_hull_centre_offset_follows_the_heading_and_the_side() -> None:
+    # heading north, antenna on the port side: the centre is 10 m to starboard (east) and 50 m ahead (north)
+    track = [hull(219000001, 0, bow=150, stern=50, port=5, starboard=25)]
+    r = NearestNeighbourValidator().validate([det("a", east_m=10, north_m=50)], track, ACQUIRED, 10)[0]
+    assert r.label == MatchLabel.MATCHED and r.match_distance_m == pytest.approx(0, abs=2)
+
+
+def test_without_dimensions_or_heading_the_antenna_is_the_reference_point() -> None:
+    no_dims = [ais(219000001, 0)]
+    assert NearestNeighbourValidator().validate([det("a", east_m=20)], no_dims, ACQUIRED, 30)[0].label == (
+        MatchLabel.MATCHED
+    )
+    no_heading = [hull(219000002, None, bow=160, stern=40, port=15, starboard=15)]
+    r = NearestNeighbourValidator().validate([det("a", east_m=0)], no_heading, ACQUIRED, 30)[0]
+    assert r.match_distance_m == pytest.approx(0, abs=2)

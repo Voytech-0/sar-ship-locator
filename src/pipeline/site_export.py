@@ -80,7 +80,15 @@ def export_scene(database: Database, store: ObjectStore, scene_id: str, out: Pat
         detections.append({**{k: r[k] for k in r if k != "chip_key"}, "chip": chip})
 
     positions = [
-        AisPosition(p["mmsi"], p["ts"], (p["lon"], p["lat"]), p["sog_knots"], p["cog_deg"], p["heading"])
+        AisPosition(
+            p["mmsi"],
+            p["ts"],
+            (p["lon"], p["lat"]),
+            p["sog_knots"],
+            p["cog_deg"],
+            p["heading"],
+            **{f: static.get(p["mmsi"], {}).get(f) for f in db.ANTENNA_FIELDS},
+        )
         for p in raw
     ]
     south = west = -1e9
