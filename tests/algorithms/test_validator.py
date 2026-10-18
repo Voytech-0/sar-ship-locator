@@ -1,9 +1,11 @@
+import math
 from datetime import timedelta
 
 import pytest
 
-from contracts.protocols import AisPosition, DetectionRef, MatchLabel, ValidationResult
+from contracts.protocols import AisPosition, DetectionRef, MatchLabel, SarGeometry, ValidationResult
 from pipeline.algorithms import NearestNeighbourValidator
+from pipeline.algorithms.sar_geometry import doppler_displacement_m, image_displacement_m
 from tests.algorithms.synthetic import ACQUIRED
 
 LAT, LON = 55.35, 10.97
@@ -145,3 +147,120 @@ def test_consumes_a_generator_of_positions() -> None:
     gen = (p for p in [ais(219000001, 0, 100, 0)])
     results = NearestNeighbourValidator().validate([det("a")], gen, ACQUIRED, 500)
     assert results[0].label == MatchLabel.MATCHED
+
+
+# Descending pass: heading 196 degrees (south-south-west), looking 90 degrees clockwise, i.e. west-north-west.
+GEOMETRY = SarGeometry(heading_deg=-163.6, speed_m_s=7588.0, slant_range_m=867_000.0, incidence_deg=37.9)
+
+
+def test_doppler_displacement_of_a_ship_moving_away_from_the_sensor() -> None:
+    look = math.radians(GEOMETRY.heading_deg + 90)
+    u = 5.0  # m/s along the look direction, away from the sensor
+    de, dn = doppler_displacement_m(GEOMETRY, u * math.sin(look), u * math.cos(look))
+    expected = 867_000 / 7588 * math.sin(math.radians(37.9)) * u  # about 350 m
+    assert math.hypot(de, dn) == pytest.approx(expected, rel=1e-6)
+    # backwards along the platform track (heading 196.4 degrees)
+    heading = math.radians(GEOMETRY.heading_deg)
+    assert de * math.sin(heading) + dn * math.cos(heading) == pytest.approx(-expected, rel=1e-6)
+
+
+def test_ship_moving_along_the_track_or_standing_still_is_not_displaced() -> None:
+    heading = math.radians(GEOMETRY.heading_deg)
+    assert doppler_displacement_m(GEOMETRY, 0.0, 0.0) == (0.0, 0.0)
+    de, dn = doppler_displacement_m(GEOMETRY, 8 * math.sin(heading), 8 * math.cos(heading))
+    assert math.hypot(de, dn) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_moving_ship_matches_only_once_the_displacement_is_applied() -> None:
+    look = math.radians(GEOMETRY.heading_deg + 90)
+    knots = 10.0
+    cog = math.degrees(look) % 360  # sailing away from the sensor
+    track = [ais(219000001, dt, 0, 0, knots, cog) for dt in (-5, 5)]
+    de, dn = doppler_displacement_m(
+        GEOMETRY, knots * 0.514444 * math.sin(look), knots * 0.514444 * math.cos(look)
+    )
+    dets = [det("a", de, dn)]  # the SAR image shows the ship displaced
+
+    plain = {r.detection_id: r for r in NearestNeighbourValidator().validate(dets, track, ACQUIRED, 150)}
+    shifted = {
+        r.detection_id: r for r in NearestNeighbourValidator().validate(dets, track, ACQUIRED, 150, GEOMETRY)
+    }
+
+    assert math.hypot(de, dn) > 250
+    assert plain["a"].label == MatchLabel.UNMATCHED
+    assert shifted["a"].label == MatchLabel.MATCHED
+    assert shifted["a"].match_distance_m == pytest.approx(0, abs=5)
+
+
+def test_a_standing_ship_is_unaffected_by_the_geometry() -> None:
+    r = {
+        x.detection_id: x
+        for x in NearestNeighbourValidator().validate(
+            [det("a", 40)], [ais(219000001, 0)], ACQUIRED, 150, GEOMETRY
+        )
+    }
+    assert r["a"].label == MatchLabel.MATCHED
+    assert r["a"].match_distance_m == pytest.approx(40, abs=3)
+
+
+ELEVATED = SarGeometry(-163.6, 7588.0, 867_000.0, 37.9, target_height_m=42.0)
+
+
+def test_a_standing_ship_at_sea_level_height_appears_closer_to_the_sensor() -> None:
+    de, dn = image_displacement_m(ELEVATED, 0.0, 0.0)
+    look = math.radians(ELEVATED.heading_deg + 90)
+    toward_sensor = -(de * math.sin(look) + dn * math.cos(look))
+    assert toward_sensor == pytest.approx(42 / math.tan(math.radians(37.9)), rel=1e-6)  # about 54 m
+    assert de * math.cos(look) - dn * math.sin(look) == pytest.approx(0, abs=1e-6)  # purely in range
+
+
+def test_a_ship_shifted_by_the_sea_height_matches_with_the_geometry() -> None:
+    de, dn = image_displacement_m(ELEVATED, 0.0, 0.0)
+    dets = [det("a", de, dn)]
+    track = [ais(219000001, 0)]
+    plain = NearestNeighbourValidator().validate(dets, track, ACQUIRED, 30)
+    corrected = NearestNeighbourValidator().validate(dets, track, ACQUIRED, 30, ELEVATED)
+    assert plain[0].label == MatchLabel.UNMATCHED
+    assert corrected[0].label == MatchLabel.MATCHED
+    assert corrected[0].match_distance_m == pytest.approx(0, abs=3)
+
+
+def hull(
+    mmsi: int, heading: int | None, bow: float, stern: float, port: float, starboard: float
+) -> AisPosition:
+    return AisPosition(
+        mmsi,
+        ACQUIRED,
+        (LON, LAT),
+        heading=heading,
+        to_bow_m=bow,
+        to_stern_m=stern,
+        to_port_m=port,
+        to_starboard_m=starboard,
+    )
+
+
+def test_ais_reference_point_is_the_hull_centre_not_the_antenna() -> None:
+    # 200 m ship heading east, antenna 40 m from the stern and 160 m from the bow: the centre is 60 m ahead
+    track = [hull(219000001, 90, bow=160, stern=40, port=15, starboard=15)]
+    ahead = [det("a", east_m=60)]
+    assert NearestNeighbourValidator().validate(ahead, track, ACQUIRED, 30)[0].label == MatchLabel.MATCHED
+    behind = [det("a", east_m=-60)]
+    assert NearestNeighbourValidator().validate(behind, track, ACQUIRED, 30)[0].label == MatchLabel.UNMATCHED
+
+
+def test_hull_centre_offset_follows_the_heading_and_the_side() -> None:
+    # heading north, antenna on the port side: the centre is 10 m to starboard (east) and 50 m ahead (north)
+    track = [hull(219000001, 0, bow=150, stern=50, port=5, starboard=25)]
+    r = NearestNeighbourValidator().validate([det("a", east_m=10, north_m=50)], track, ACQUIRED, 10)[0]
+    assert r.label == MatchLabel.MATCHED and r.match_distance_m == pytest.approx(0, abs=2)
+
+
+def test_without_dimensions_or_heading_the_antenna_is_the_reference_point() -> None:
+    no_dims = [ais(219000001, 0)]
+    assert NearestNeighbourValidator().validate([det("a", east_m=20)], no_dims, ACQUIRED, 30)[0].label == (
+        MatchLabel.MATCHED
+    )
+    no_heading = [hull(219000002, None, bow=160, stern=40, port=15, starboard=15)]
+    r = NearestNeighbourValidator().validate([det("a", east_m=0)], no_heading, ACQUIRED, 30)[0]
+    assert r.match_distance_m == pytest.approx(0, abs=2)

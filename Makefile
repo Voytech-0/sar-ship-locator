@@ -1,4 +1,4 @@
-.PHONY: install lint fmt typecheck test check-contracts check-schema ci land site
+.PHONY: install lint fmt typecheck test check-contracts check-schema check-alerts ci land site
 
 install:
 	uv sync
@@ -21,6 +21,10 @@ check-contracts:
 	uv run pytest tests/contracts
 
 # Applies contracts/schema.sql to a throwaway PostGIS container (needs Docker).
+# Unit-tests the Prometheus alert rules with promtool (Docker).
+check-alerts:
+	docker run --rm --entrypoint promtool -v $(CURDIR)/deploy/prometheus:/p prom/prometheus:v2.55.1 test rules /p/alerts_test.yml
+
 check-schema:
 	scripts/check_schema.sh
 

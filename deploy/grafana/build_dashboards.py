@@ -195,6 +195,7 @@ DETECTIONS_PER_SCENE = """\
 SELECT s.acquired_at AS time, count(d.id) AS detections
 FROM scenes s
 LEFT JOIN detections d ON d.scene_id = s.scene_id
+  AND ('$detector' = 'All' OR d.detector_version = '$detector')
 WHERE $__timeFilter(s.acquired_at)
 GROUP BY s.scene_id, s.acquired_at
 ORDER BY 1"""
@@ -205,6 +206,7 @@ FROM validations v
 JOIN detections d ON d.id = v.detection_id
 JOIN scenes s ON s.scene_id = d.scene_id
 WHERE $__timeFilter(s.acquired_at)
+  AND ('$detector' = 'All' OR d.detector_version = '$detector')
 GROUP BY s.acquired_at, v.label
 ORDER BY 1"""
 
@@ -214,6 +216,7 @@ FROM validations v
 JOIN detections d ON d.id = v.detection_id
 JOIN scenes s ON s.scene_id = d.scene_id
 WHERE $__timeFilter(s.acquired_at)
+  AND ('$detector' = 'All' OR d.detector_version = '$detector')
 GROUP BY v.label"""
 
 RECENT_DETECTIONS = """\
@@ -225,6 +228,7 @@ FROM detections d
 JOIN scenes s ON s.scene_id = d.scene_id
 LEFT JOIN validations v ON v.detection_id = d.id
 WHERE $__timeFilter(s.acquired_at)
+  AND ('$detector' = 'All' OR d.detector_version = '$detector')
 ORDER BY s.acquired_at DESC
 LIMIT 5000"""
 
@@ -299,6 +303,7 @@ SELECT '$api_url/v1/detections/' || c.detection_id || '/chip' AS chip,
        c.acquired_at, c.confidence, c.length_m, c.lat AS latitude, c.lon AS longitude, c.scene_id
 FROM dark_ship_candidates c
 WHERE $__timeFilter(c.acquired_at)
+  AND ('$detector' = 'All' OR c.detector_version = '$detector')
 ORDER BY c.acquired_at DESC, c.confidence DESC
 LIMIT 100"""
 
@@ -312,8 +317,26 @@ LEFT JOIN validations v ON v.detection_id = d.id
 WHERE d.chip_key IS NOT NULL AND $__timeFilter(s.acquired_at)
   AND ('$label' = 'All' OR COALESCE(v.label::text, 'unvalidated') = '$label')
   AND ('$shore' = 'All' OR d.shore::text = '$shore')
+  AND ('$detector' = 'All' OR d.detector_version = '$detector')
 ORDER BY d.confidence DESC
 LIMIT 60"""
+
+
+# The newest detector version is the default; Detections of older versions stay for comparison.
+DETECTOR_VARIABLE: dict[str, Any] = {
+    "type": "query",
+    "name": "detector",
+    "label": "Detector version",
+    "datasource": PG,
+    "query": (
+        "SELECT v FROM (SELECT 'All' AS v"
+        " UNION SELECT DISTINCT detector_version FROM detections) t ORDER BY (v = 'All'), v DESC"
+    ),
+    "refresh": 1,
+    "includeAll": False,
+    "multi": False,
+    "options": [],
+}
 
 
 def _choice(name: str, label: str, values: list[str], default: str = "All") -> dict[str, Any]:
@@ -406,6 +429,7 @@ def detections() -> dict[str, Any]:
             API_URL,
             _choice("label", "Label", ["matched", "unmatched", "ambiguous", "unvalidated"]),
             _choice("shore", "Shore", ["open_water", "near_shore"]),
+            DETECTOR_VARIABLE,
         ],
     )
 
@@ -428,6 +452,31 @@ _MATCH_FROM_SPEED = _MATCH_FROM.replace(
     ORDER BY abs(extract(epoch FROM (a.ts - s.acquired_at))) LIMIT 1
 ) ais ON true
 WHERE $__timeFilter""",
+)
+
+# Matched Detections whose AIS vessel has a known length: how well does the SAR length agree?
+_LENGTH_FROM = (
+    _MATCH_FROM.replace(
+        "WHERE $__timeFilter",
+        "JOIN ais_vessels av ON av.mmsi = v.matched_mmsi\nWHERE $__timeFilter",
+    )
+    + "\n  AND v.label = 'matched' AND d.length_m IS NOT NULL AND av.length_m IS NOT NULL"
+)
+LENGTH_AGREEMENT = (
+    "SELECT count(*) AS ships,\n"
+    "       percentile_cont(0.5) WITHIN GROUP (ORDER BY d.length_m / av.length_m) AS median_sar_over_ais,\n"
+    "       percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(d.length_m - av.length_m)) AS median_error_m,\n"
+    "       100.0 * count(*) FILTER (WHERE abs(d.length_m - av.length_m) <= 0.25 * av.length_m)\n"
+    "         / NULLIF(count(*), 0) AS within_25_pct\n" + _LENGTH_FROM
+)
+LENGTH_BY_AIS_CLASS = (
+    "SELECT CASE WHEN av.length_m < 60 THEN '1: under 60 m'\n"
+    "            WHEN av.length_m < 120 THEN '2: 60-120 m' WHEN av.length_m < 200 THEN '3: 120-200 m'\n"
+    "            ELSE '4: 200 m or longer' END AS ais_length_class,\n"
+    "       percentile_cont(0.5) WITHIN GROUP (ORDER BY av.length_m) AS ais_length_m,\n"
+    "       percentile_cont(0.5) WITHIN GROUP (ORDER BY d.length_m) AS sar_length_m\n"
+    + _LENGTH_FROM
+    + "\nGROUP BY 1 ORDER BY 1"
 )
 
 MATCH_OUTCOMES = (
@@ -601,6 +650,28 @@ def matches() -> dict[str, Any]:
                 overrides=_unit_overrides(_RATE_UNITS),
             ),
             sql_panel(
+                12,
+                "SAR length against AIS length (matched ships with a known AIS length)",
+                "stat",
+                LENGTH_AGREEMENT,
+                _grid(0, 47, 10, 5),
+                fmt="table",
+                defaults={"decimals": 1},
+                overrides=_unit_overrides(
+                    {"median_error_m": "lengthm", "within_25_pct": "percent", "median_sar_over_ais": "none"}
+                ),
+            ),
+            sql_panel(
+                13,
+                "Median length by AIS length class: AIS against SAR estimate",
+                "barchart",
+                LENGTH_BY_AIS_CLASS,
+                _grid(10, 47, 14, 9),
+                fmt="table",
+                options={**_BARS, "xField": "ais_length_class"},
+                overrides=_unit_overrides({"ais_length_m": "lengthm", "sar_length_m": "lengthm"}),
+            ),
+            sql_panel(
                 8,
                 "Matched Detections by distance to the AIS vessel",
                 "geomap",
@@ -655,21 +726,7 @@ def matches() -> dict[str, Any]:
         variables=[
             API_URL,
             _choice("shore", "Shore", ["open_water", "near_shore"], default="open_water"),
-            {
-                "type": "query",
-                "name": "detector",
-                "label": "Detector version",
-                "datasource": PG,
-                "query": (
-                    "SELECT v FROM (SELECT 'All' AS v"
-                    " UNION SELECT DISTINCT detector_version FROM detections) t ORDER BY (v <> 'All'), v"
-                ),
-                "refresh": 1,
-                "includeAll": False,
-                "multi": False,
-                "current": {"selected": True, "text": "All", "value": "All"},
-                "options": [],
-            },
+            DETECTOR_VARIABLE,
         ],
     )
 

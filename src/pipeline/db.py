@@ -183,6 +183,16 @@ def mark_scene_done(conn: Conn, scene_id: str, status: str, raster_key: str | No
     )
 
 
+def set_scene_geometry(conn: Conn, scene_id: str, geometry: dict[str, float]) -> None:
+    conn.execute("UPDATE scenes SET sar_geometry = %s WHERE scene_id = %s", (Jsonb(geometry), scene_id))
+
+
+def get_scene_geometry(conn: Conn, scene_id: str) -> dict[str, float] | None:
+    row = conn.execute("SELECT sar_geometry FROM scenes WHERE scene_id = %s", (scene_id,)).fetchone()
+    geometry: dict[str, float] | None = None if row is None else row["sar_geometry"]
+    return geometry
+
+
 def clear_raster_key(conn: Conn, scene_id: str) -> None:
     conn.execute("UPDATE scenes SET raster_key = NULL WHERE scene_id = %s", (scene_id,))
 
@@ -350,30 +360,37 @@ def insert_ais_positions(conn: Conn, positions: Sequence[Row]) -> int:
     return cur.rowcount
 
 
+VESSEL_FIELDS = (
+    "name",
+    "ship_type",
+    "length_m",
+    "width_m",
+    "to_bow_m",
+    "to_stern_m",
+    "to_port_m",
+    "to_starboard_m",
+)
+
+
+ANTENNA_FIELDS = ("to_bow_m", "to_stern_m", "to_port_m", "to_starboard_m")
+
+
 def upsert_ais_vessels(conn: Conn, vessels: Sequence[Row]) -> None:
-    """Static vessel data (`mmsi` plus optional name, ship_type, length_m, width_m); non-empty values win."""
+    """Static vessel data (`mmsi` plus the optional `VESSEL_FIELDS`); non-empty values win."""
     if not vessels:
         return
+    columns = ", ".join(("mmsi", *VESSEL_FIELDS))
+    marks = ", ".join(["%s"] * (len(VESSEL_FIELDS) + 1))
+    updates = ", ".join(f"{f} = COALESCE(EXCLUDED.{f}, ais_vessels.{f})" for f in VESSEL_FIELDS)
     conn.cursor().executemany(
-        """
-        INSERT INTO ais_vessels (mmsi, name, ship_type, length_m, width_m) VALUES (%s, %s, %s, %s, %s)
-        ON CONFLICT (mmsi) DO UPDATE SET
-            name = COALESCE(EXCLUDED.name, ais_vessels.name),
-            ship_type = COALESCE(EXCLUDED.ship_type, ais_vessels.ship_type),
-            length_m = COALESCE(EXCLUDED.length_m, ais_vessels.length_m),
-            width_m = COALESCE(EXCLUDED.width_m, ais_vessels.width_m)
-        """,
-        [
-            (v["mmsi"], v.get("name"), v.get("ship_type"), v.get("length_m"), v.get("width_m"))
-            for v in vessels
-        ],
+        f"INSERT INTO ais_vessels ({columns}) VALUES ({marks}) ON CONFLICT (mmsi) DO UPDATE SET {updates}",
+        [(v["mmsi"], *(v.get(f) for f in VESSEL_FIELDS)) for v in vessels],
     )
 
 
 def list_ais_vessels(conn: Conn, mmsis: Sequence[int]) -> list[Row]:
     return conn.execute(
-        "SELECT mmsi, name, ship_type, length_m, width_m FROM ais_vessels WHERE mmsi = ANY(%s)",
-        (list(mmsis),),
+        f"SELECT mmsi, {', '.join(VESSEL_FIELDS)} FROM ais_vessels WHERE mmsi = ANY(%s)", (list(mmsis),)
     ).fetchall()
 
 
@@ -389,10 +406,11 @@ def list_ais_positions(conn: Conn, start: datetime, end: datetime) -> list[Row]:
 
 
 def list_detection_points(conn: Conn, scene_id: str) -> list[Row]:
-    """Every Detection of a Scene (all Detector versions): `id`, `lon`, `lat`, `length_m`."""
+    """Every Detection of a Scene (all Detector versions): `id`, `lon`, `lat`, `length_m`, `detector_*`."""
     return conn.execute(
         """
-        SELECT id::text AS id, ST_X(geom) AS lon, ST_Y(geom) AS lat, length_m
+        SELECT id::text AS id, ST_X(geom) AS lon, ST_Y(geom) AS lat, length_m,
+               detector_name, detector_version
         FROM detections WHERE scene_id = %s ORDER BY created_at, id
         """,
         (scene_id,),

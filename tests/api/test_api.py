@@ -283,9 +283,9 @@ def test_rerunning_detect_replaces_that_detector_versions_rows(api: Api) -> None
     api.sql("UPDATE scenes SET status = 'fetched' WHERE scene_id = %s", (SCENE_1,))
     api.run("detect", {"scene_id": SCENE_1, "detector": {"name": "ca-cfar", "version": "1"}})
     api.sql("UPDATE scenes SET status = 'fetched' WHERE scene_id = %s", (SCENE_1,))
-    other = api.run("detect", {"scene_id": SCENE_1, "detector": {"name": "ca-cfar", "version": "2"}})
-    assert other["result"]["detector_version"] == "2"
-    versions = api.client.get(f"/v1/scenes/{SCENE_1}/detections", params={"detector_version": "2"}).json()
+    other = api.run("detect", {"scene_id": SCENE_1, "detector": {"name": "ca-cfar", "version": "3"}})
+    assert other["result"]["detector_version"] == "3"
+    versions = api.client.get(f"/v1/scenes/{SCENE_1}/detections", params={"detector_version": "3"}).json()
     assert len(versions["features"]) == 2
     everything = api.client.get(f"/v1/scenes/{SCENE_1}/detections").json()
     assert len(everything["features"]) == 4
@@ -534,3 +534,11 @@ def test_identifiers_the_database_cannot_hold_are_unknown_not_errors(
     resp = api.submit(stage, body)
     assert resp.status_code == 404
     assert_conforms(resp, "post", f"/stages/{stage}")
+
+
+def test_validated_scene_can_be_validated_again_without_a_raster(api: Api) -> None:
+    api.discover()
+    api.sql("UPDATE scenes SET status = 'validated', raster_key = NULL WHERE scene_id = %s", (SCENE_1,))
+    assert api.submit("validate", scene_body()).status_code == 202
+    api.drain()
+    assert api.scene(SCENE_1)["status"] == "validated"

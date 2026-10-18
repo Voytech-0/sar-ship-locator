@@ -35,3 +35,11 @@ _Avoid_: Legal ship, identified
 **Unmatched**:
 A Detection with no AIS counterpart. A dark-ship candidate only; not proof of one.
 _Avoid_: Dark ship, suspicious
+
+**Image position**:
+Where a ship appears in the SAR image, not where it is. A moving ship is displaced along the satellite track by its Doppler shift, and every ship at sea is displaced toward the sensor by its height above the ellipsoid. Validation compares a Detection with the AIS position moved to its image position.
+_Avoid_: Corrected position, true position (the AIS position is the true one)
+
+**Imaging geometry**:
+Platform heading, speed, slant range and incidence angle of a Scene's Region window, read from the product annotation (`SarGeometry`). It is what turns an AIS position into an image position.
+_Avoid_: Orbit data, metadata

@@ -37,7 +37,27 @@ Airflow only orchestrates; pipeline-api runs every stage as an async job ┘   P
 
 ## Training data
 
-Every validated Detection keeps its Chip and an AIS-derived label. `docker compose run --rm pipeline-api python -m pipeline.dataset v1` exports an immutable, versioned dataset (manifest plus a `chips.npz` bundle). The labels are weak (an AIS match means a ship was there; no match means unknown), and examples are split by scene so near-identical neighbouring chips never leak between train and test.
+Every validated Detection keeps its Chip and an AIS-derived label. `docker compose run --rm pipeline-api python -m pipeline.dataset v3` exports an immutable, versioned dataset (manifest plus a `chips.npz` bundle). The labels are weak (an AIS match means a ship was there; no match means unknown), and examples are split by scene so near-identical neighbouring chips never leak between train and test.
+
+## Review website
+
+A static page (Leaflet, no build step) shows one Scene at a time: the VV radar image as an overlay, Detections coloured by validation outcome with their Chips, the dark-ship candidates, AIS vessels at acquisition time with their tracks (name, length, type), and filters. Export the data and serve it:
+
+```sh
+docker compose run --rm -v $PWD/site/data:/out pipeline-api python -m pipeline.site_export --out /out
+cd site && python3 -m http.server 8099      # http://localhost:8099
+```
+
+## What the data showed
+
+Matching ships against AIS looked easy and was not. The first real run put matched ships a median 131 m (p90 295 m) from their AIS position, growing with speed. A fit over the moving ships showed it was not timing:
+
+- **Doppler displacement.** A SAR image places a moving target by its Doppler shift, so a ship with a speed along the radar's line of sight is displaced along the satellite track by about 60 s times that speed (5 m/s is 300+ m). `fetch` reads the imaging geometry from the product annotation and the Validator moves every AIS track the same way before matching (median 131 to 74 m).
+- **Sea height.** The remaining error was a constant 57 m toward the sensor, for every ship in every Scene. The product is geolocated on the ellipsoid and the sea surface is about 42 m above it (the geoid), which shifts a ship by `h / tan(incidence)`. Correcting it brought the median to 52 m (p90 96 m).
+- **Antenna position.** AIS reports the antenna, usually aft, while the radar return is centred on the hull: Detections of large ships sat 40-60 m ahead of their AIS point. The antenna distances from the AIS static data move the reference to the hull centre (median 33 m, p90 67 m).
+- With the positions fixed the match gate went from 500 to 200 m, which removed most ambiguous matches.
+
+Details, numbers and the things that did not pan out (structure displacement, antenna offset) are in `AGENTS.md`.
 
 ## Where to look
 

@@ -24,6 +24,12 @@ jobs:
       - uses: actions/checkout@v4
       - run: make check-schema
 
+  alerts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make check-alerts
+
   dags:
     runs-on: ubuntu-latest
     defaults:

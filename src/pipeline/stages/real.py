@@ -25,6 +25,7 @@ from contracts.protocols import (
     ObjectStore,
     PermanentError,
     Region,
+    SarGeometry,
     SceneFetcher,
     SceneRef,
     ShoreClass,
@@ -107,6 +108,11 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
         key = save_raster(services.store, raster)
         with ctx.db.connection() as conn:  # the Region data's own time, used for AIS matching
             db.set_scene_acquired_at(conn, request.scene_id, raster.acquired_at)
+            if raster.geometry is not None:
+                geometry = dataclasses.replace(
+                    raster.geometry, target_height_m=cfg.validation.sea_level_height_m
+                )
+                db.set_scene_geometry(conn, request.scene_id, dataclasses.asdict(geometry))
         return FetchResult(raster_key=key, bytes_downloaded=raster.bytes_downloaded)
 
     def purge_expired_rasters(
@@ -209,14 +215,9 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
                         "heading": p.heading,
                     }
                 )
-                if p.name or p.ship_type or p.length_m or p.width_m:
-                    vessels[p.mmsi] = {
-                        "mmsi": p.mmsi,
-                        "name": p.name,
-                        "ship_type": p.ship_type,
-                        "length_m": p.length_m,
-                        "width_m": p.width_m,
-                    }
+                static = {f: getattr(p, f) for f in db.VESSEL_FIELDS}
+                if any(static.values()):
+                    vessels[p.mmsi] = {"mmsi": p.mmsi, **static}
                 if len(batch) >= AIS_BATCH:
                     loaded += db.insert_ais_positions(conn, batch)
                     batch = []
@@ -234,17 +235,31 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
             margin = timedelta(minutes=cfg.validation.ais_margin_minutes)
             dets = db.list_detection_points(conn, request.scene_id)
             positions = db.list_ais_positions(conn, when - margin, when + margin)
-        results = services.validator.validate(
-            [DetectionRef(d["id"], (d["lon"], d["lat"]), d["length_m"]) for d in dets],
-            [
-                AisPosition(
-                    p["mmsi"], p["ts"], (p["lon"], p["lat"]), p["sog_knots"], p["cog_deg"], p["heading"]
-                )
-                for p in positions
-            ],
-            when,
-            cfg.validation.gate_m,
-        )
+            stored = db.get_scene_geometry(conn, request.scene_id)
+            hulls = {v["mmsi"]: v for v in db.list_ais_vessels(conn, sorted({p["mmsi"] for p in positions}))}
+        ais = [
+            AisPosition(
+                p["mmsi"],
+                p["ts"],
+                (p["lon"], p["lat"]),
+                p["sog_knots"],
+                p["cog_deg"],
+                p["heading"],
+                **{f: hulls.get(p["mmsi"], {}).get(f) for f in db.ANTENNA_FIELDS},
+            )
+            for p in positions
+        ]
+        geometry = SarGeometry(**stored) if stored else None
+        by_detector: dict[tuple[str, str], list[DetectionRef]] = {}
+        for d in dets:  # one AIS track explains one Detection per Detector version, not across versions
+            by_detector.setdefault((d["detector_name"], d["detector_version"]), []).append(
+                DetectionRef(d["id"], (d["lon"], d["lat"]), d["length_m"])
+            )
+        results = [
+            r
+            for refs in by_detector.values()
+            for r in services.validator.validate(refs, ais, when, cfg.validation.gate_m, geometry)
+        ]
         counts = {"matched": 0, "unmatched": 0, "ambiguous": 0}
         with ctx.db.connection() as conn:
             for r in results:

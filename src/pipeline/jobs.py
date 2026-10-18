@@ -75,8 +75,10 @@ def _check_scene_ready(conn: db.Conn, stage: Stage, scene_id: str) -> None:
     step = SCENE_STEPS[stage]
     is_retry = state["status"] == "failed" and state["failed_stage"] == stage.value
     # A processed Scene can be detected again while its raster is kept, and fetched again once it is gone.
-    redo = stage in (Stage.DETECT, Stage.FETCH) and state["status"] in ("detected", "validated")
-    if redo and (state["raster_key"] is not None) != (stage is Stage.DETECT):
+    redo = (stage in (Stage.DETECT, Stage.FETCH) and state["status"] in ("detected", "validated")) or (
+        stage is Stage.VALIDATE and state["status"] == "validated"
+    )
+    if redo and stage is not Stage.VALIDATE and (state["raster_key"] is not None) != (stage is Stage.DETECT):
         has = "no longer" if stage is Stage.DETECT else "still"
         raise WrongStatusError(f"scene {scene_id!r} is {state['status']} and {has} has a stored raster")
     if state["status"] != step.required.value and not is_retry and not redo:

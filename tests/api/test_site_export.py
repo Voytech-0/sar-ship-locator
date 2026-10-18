@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -38,7 +39,9 @@ def test_scene_export(api: Api, store: S3ObjectStore, tmp_path: Path) -> None:  
     with api.db.connection() as conn:
         db.insert_ais_positions(conn, rows)
         db.upsert_ais_vessels(conn, [{"mmsi": 219000001, "name": "TAURUS", "length_m": 183.0}])
-        db.upsert_ais_vessels(conn, [{"mmsi": 219000001, "ship_type": "Tanker"}])
+        db.upsert_ais_vessels(
+            conn, [{"mmsi": 219000001, "ship_type": "Tanker", "to_bow_m": 147.0, "to_stern_m": 36.0}]
+        )
 
     doc = export_scene(api.db, store, "S1_A", tmp_path)
 
@@ -59,3 +62,44 @@ def test_scene_export(api: Api, store: S3ObjectStore, tmp_path: Path) -> None:  
     assert (tmp_path / "S1_A" / "preview.png").exists()
     assert json.loads((tmp_path / "S1_A" / "scene.json").read_text())["scene_id"] == "S1_A"
     assert np.isfinite(doc["ais"][0]["lon"])
+    assert (doc["ais"][0]["image_lon"], doc["ais"][0]["image_lat"]) == (
+        doc["ais"][0]["lon"],
+        doc["ais"][0]["lat"],
+    )  # no geometry stored
+
+
+def test_vessels_appear_displaced_when_the_scene_has_a_geometry(
+    api: Api,
+    store: S3ObjectStore,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    add_scene(api, store, "S1_G", [("matched", True)])
+    with api.db.connection() as conn:
+        db.insert_ais_positions(
+            conn,
+            [
+                {
+                    "mmsi": 219000001,
+                    "ts": WHEN,
+                    "lon": 11.0,
+                    "lat": 55.3,
+                    "sog_knots": 0.0,
+                    "cog_deg": 0.0,
+                    "heading": 0,
+                }
+            ],
+        )
+        db.set_scene_geometry(
+            conn,
+            "S1_G",
+            {
+                "heading_deg": -163.6,
+                "speed_m_s": 7588.0,
+                "slant_range_m": 867000.0,
+                "incidence_deg": 37.9,
+                "target_height_m": 42.0,
+            },
+        )
+    (vessel,) = export_scene(api.db, store, "S1_G", tmp_path)["ais"]
+    metres = ((vessel["image_lon"] - vessel["lon"]) * 63_000, (vessel["image_lat"] - vessel["lat"]) * 111_000)
+    assert 45 < math.hypot(*metres) < 65  # a standing ship at sea level height: about 54 m toward the sensor

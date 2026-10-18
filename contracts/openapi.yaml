@@ -15,7 +15,8 @@ info:
 
     **Re-processing.** `detect` also accepts a `detected` or `validated` Scene while its raster is still stored
     (`retention.raster_days`), and `fetch` a `detected` or `validated` Scene whose raster is gone; any other
-    case is `409`. The Scene then becomes `detected` (or `fetched`) again and needs `validate` again.
+    case is `409`. The Scene then becomes `detected` (or `fetched`) again and needs `validate` again. `validate` also
+    accepts a `validated` Scene (new AIS, new geometry or a new detector version) and needs no raster.
     Detections are kept per detector version, so a new version adds rows instead of replacing the old ones.
     A `detect` request without `detector` is pinned to the Region's configured detector name and version, so
     bumping `detector.version` in the Region config makes a new Job instead of returning the old one.
@@ -98,7 +99,7 @@ paths:
     post:
       tags: [stages]
       operationId: submitValidate
-      summary: Validate a `detected` Scene's Detections against loaded AIS Positions. Scene becomes `validated`.
+      summary: Validate a `detected` or `validated` Scene's Detections against loaded AIS Positions. Scene becomes `validated`.
       requestBody:
         required: true
         content:
@@ -349,7 +350,7 @@ components:
           required: [name]
           properties:
             name: {type: string, examples: [ca-cfar]}
-            version: {type: string, examples: ['1']}
+            version: {type: [string, 'null'], examples: ['1']}  # null = the Region's configured version
 
     AisLoadRequest:
       type: object

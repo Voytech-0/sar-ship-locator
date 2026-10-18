@@ -8,6 +8,7 @@ Fallback: any other layout (compressed, tiled, non-contiguous) downloads the who
 from __future__ import annotations
 
 import logging
+import math
 import re
 import struct
 import tempfile
@@ -27,7 +28,7 @@ from botocore.exceptions import ClientError
 from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
-from contracts.protocols import PermanentError, Region, SceneRaster, SceneRef, TransientError
+from contracts.protocols import PermanentError, Region, SarGeometry, SceneRaster, SceneRef, TransientError
 
 from ._retry import RetryPolicy
 from ._s3 import S3RangeReader, is_retryable, raise_if_permanent, ranged_get
@@ -196,37 +197,50 @@ class Sentinel1S3Fetcher:
                 np.asarray(rows, dtype=np.float64) + r0, np.asarray(cols, dtype=np.float64) + c0
             )
 
+        acquired_at, geometry = self._annotation(scene, prefix, window, tally)
         return SceneRaster(
             scene_id=scene.scene_id,
-            acquired_at=self._window_time(scene, prefix, (r0 + r1) / 2, tally),
+            acquired_at=acquired_at,
             sigma0_vv=sigma0,
             transform=fit.transform,
             geolocate=geolocate,
             bytes_downloaded=tally.bytes,
+            geometry=geometry,
         )
 
     # ----------------------------------------------------------------- helpers
 
-    def _window_time(self, scene: SceneRef, prefix: str, centre_row: float, tally: _Tally) -> Any:
-        """Acquisition time of the window's centre row: catalogue start plus rows * azimuth time interval.
+    def _annotation(
+        self, scene: SceneRef, prefix: str, window: tuple[int, int, int, int], tally: _Tally
+    ) -> tuple[Any, SarGeometry | None]:
+        """Acquisition time of the window's centre row and the imaging geometry, from the VV annotation.
 
         The catalogue time is the start of a ~25 s acquisition, so using it directly would misplace ships
-        by up to 25 s of motion when matching against AIS. Falls back to the catalogue time if the
-        annotation is missing or lacks the interval.
+        by up to 25 s of motion when matching against AIS. Falls back to the catalogue time (and no
+        geometry) if the annotation is missing or lacks the interval.
         """
+        r0, r1, c0, c1 = window
         try:
             key = self._find_key(
                 prefix + "annotation/",
                 lambda n: n.startswith("s1") and "-vv-" in n and n.endswith(".xml"),
                 "VV annotation",
             )
-            node = ET.fromstring(self._get_object(key, tally)).find(".//azimuthTimeInterval")
+            root = ET.fromstring(self._get_object(key, tally))
+            node = root.find(".//azimuthTimeInterval")
             if node is None or not node.text:
                 raise ValueError("no azimuthTimeInterval")
-            return scene.acquired_at + timedelta(seconds=centre_row * float(node.text))
+            acquired_at = scene.acquired_at + timedelta(seconds=(r0 + r1) / 2 * float(node.text))
         except (PermanentError, ValueError, ET.ParseError) as exc:
             log.warning("%s: using the catalogue acquisition time (%s)", scene.scene_id, exc)
-            return scene.acquired_at
+            return scene.acquired_at, None
+        try:
+            return acquired_at, parse_geometry(root, (r0 + r1) / 2, (c0 + c1) / 2)
+        except (ValueError, TypeError) as exc:
+            log.warning(
+                "%s: no imaging geometry, AIS matching skips the Doppler shift (%s)", scene.scene_id, exc
+            )
+            return acquired_at, None
 
     @staticmethod
     def _product_prefix(scene: SceneRef) -> str:
@@ -346,3 +360,46 @@ class Sentinel1S3Fetcher:
         if full.ndim != 2:
             raise PermanentError(f"{key}: expected a single-band image, got shape {full.shape}")
         return np.array(full[r0:r1, c0:c1], dtype=np.uint16)
+
+
+_LIGHT_M_S = 299_792_458.0
+_GRID_POINTS = 4  # grid points nearest to the window centre that are averaged
+
+
+def parse_geometry(root: ET.Element, centre_row: float, centre_col: float) -> SarGeometry:
+    """Imaging geometry near a window centre from a Sentinel-1 annotation (raises ValueError if absent).
+
+    Heading from `platformHeading`, speed from the orbit state vectors, slant range (two-way time times c / 2)
+    and incidence from the geolocation grid points nearest to the centre.
+    """
+
+    def number(node: ET.Element | None) -> float:
+        if node is None or not node.text:
+            raise ValueError("annotation field missing")
+        return float(node.text)
+
+    heading = number(root.find(".//platformHeading"))
+    speeds = [
+        math.sqrt(sum(number(v.find(axis)) ** 2 for axis in "xyz")) for v in root.findall(".//orbit/velocity")
+    ]
+    if not speeds:
+        raise ValueError("no orbit state vectors")
+    points = [
+        (
+            number(p.find("line")),
+            number(p.find("pixel")),
+            number(p.find("slantRangeTime")),
+            number(p.find("incidenceAngle")),
+        )
+        for p in root.findall(".//geolocationGridPoint")
+    ]
+    if not points:
+        raise ValueError("no geolocation grid")
+    points.sort(key=lambda p: (p[0] - centre_row) ** 2 + (p[1] - centre_col) ** 2)
+    near = points[:_GRID_POINTS]
+    return SarGeometry(
+        heading_deg=heading,
+        speed_m_s=sum(speeds) / len(speeds),
+        slant_range_m=sum(p[2] for p in near) / len(near) * _LIGHT_M_S / 2,
+        incidence_deg=sum(p[3] for p in near) / len(near),
+    )
