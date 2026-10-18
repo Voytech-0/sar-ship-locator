@@ -33,7 +33,9 @@ SHIPS = [
 @pytest.fixture(scope="module")
 def detector() -> CaCfarDetector:
     cfg = yaml.safe_load(REGION_CONFIG.read_text())["detector"]
-    return CaCfarDetector.from_params({**cfg["params"], "version": cfg["version"]})
+    # the floors are tested on their own; the synthetic ships here are small and weak on purpose
+    params = {**cfg["params"], "min_length_m": 0.0, "min_confidence": 0.0}
+    return CaCfarDetector.from_params({**params, "version": cfg["version"]})
 
 
 def test_identity_and_params_from_region_config(detector: CaCfarDetector) -> None:
@@ -103,6 +105,29 @@ def test_length_bias_is_subtracted_but_never_below_one_pixel() -> None:
     assert tiny.length_m is not None and 5 < tiny.length_m < 15  # one pixel
     with pytest.raises(ValueError, match="length_bias_m"):
         CaCfarDetector(length_bias_m=-1)
+
+
+def test_region_config_sets_the_floors() -> None:
+    cfg = yaml.safe_load(REGION_CONFIG.read_text())["detector"]
+    d = CaCfarDetector.from_params({**cfg["params"], "version": cfg["version"]})
+    assert (d.min_length_m, d.min_confidence) == (30.0, 0.7)
+
+
+def test_min_length_and_min_confidence_drop_weak_short_clusters() -> None:
+    img = speckled_sea((400, 400), seed=2)
+    add_ships(img, [Ship(100, 100, 4, 24), Ship(300, 300, 3, 3, gain=40.0)])
+    both = CaCfarDetector().detect(make_raster(img))
+    assert len(both) == 2
+    long_one = max(both, key=lambda d: d.length_m or 0)
+    short_one = min(both, key=lambda d: d.length_m or 0)
+    assert short_one.length_m is not None and long_one.length_m is not None
+    floor = (short_one.length_m + long_one.length_m) / 2
+    only_long = CaCfarDetector(min_length_m=floor).detect(make_raster(img))
+    assert [d.pixel_box for d in only_long] == [long_one.pixel_box]
+    weak = min(both, key=lambda d: d.confidence)
+    strong = max(both, key=lambda d: d.confidence)
+    kept = CaCfarDetector(min_confidence=(weak.confidence + strong.confidence) / 2).detect(make_raster(img))
+    assert [d.pixel_box for d in kept] == [strong.pixel_box]
 
 
 def test_brighter_ship_has_higher_confidence(detector: CaCfarDetector) -> None:

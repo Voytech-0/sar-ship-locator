@@ -198,24 +198,24 @@ def test_redetect_with_a_new_version_keeps_the_old_detections(
 
     api.app.state.config.regions[
         "great-belt"
-    ].detector.version = "4"  # the Region config labels a new parameter set
+    ].detector.version = "5"  # the Region config labels a new parameter set
     again = api.run("detect", {"scene_id": SCENE_ID})
 
     assert again["status"] == "succeeded", again
-    assert again["result"]["detector_version"] == "4"
+    assert again["result"]["detector_version"] == "5"
     assert api.scene(SCENE_ID)["status"] == "detected"  # validation has to run again
     new, old = again["result"], first["result"]
-    for version, count in (("4", new["detection_count"]), (old["detector_version"], old["detection_count"])):
+    for version, count in (("5", new["detection_count"]), (old["detector_version"], old["detection_count"])):
         found = api.client.get(f"/v1/scenes/{SCENE_ID}/detections", params={"detector_version": version})
         assert len(found.json()["features"]) == count
     api.run("ais-load", {"region_id": "great-belt", "date": "2026-10-14"})
     assert api.run("validate", {"scene_id": SCENE_ID})["status"] == "succeeded"
     matched = {}
-    for version in ("4", old["detector_version"]):
+    for version in ("5", old["detector_version"]):
         found = api.client.get(f"/v1/scenes/{SCENE_ID}/detections", params={"detector_version": version})
         matched[version] = sum(1 for f in found.json()["features"] if f["properties"]["label"] == "matched")
     # an AIS track explains one Detection per version: both versions find the same ships
-    assert matched["4"] == matched[old["detector_version"]] > 0
+    assert matched["5"] == matched[old["detector_version"]] > 0
     assert store.exists(f"scenes/{SCENE_ID}/sigma0.npy")
 
 
@@ -229,7 +229,7 @@ def test_raster_days_zero_deletes_the_raster_after_detect(
     api.run("detect", {"scene_id": SCENE_ID})
     assert not store.exists(f"scenes/{SCENE_ID}/sigma0.npy")
     assert api.sql("SELECT raster_key FROM scenes WHERE scene_id = %s", (SCENE_ID,))[0]["raster_key"] is None
-    api.app.state.config.regions["great-belt"].detector.version = "4"
+    api.app.state.config.regions["great-belt"].detector.version = "5"
     assert api.submit("detect", {"scene_id": SCENE_ID}).status_code == 409  # a new fetch has to come first
 
 

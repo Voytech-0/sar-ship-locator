@@ -16,13 +16,17 @@ detector:
   # and cuts unmatched open-water Detections by about 76 percent.
   # v3: v2 plus length_bias_m 20 (the cluster extent includes the point spread; against AIS length the raw
   # median absolute error fell from 22 to 15 m on 59 matched ships).
-  version: "3"
+  # v4: v3 plus min_length_m 30 and min_confidence 0.7 (weak, short clusters are mostly false alarms: on 9 Scenes
+  # 141 unmatched open-water Detections become 23, no AIS-matched ship of 30 m or longer is lost).
+  version: "4"
   params:
     guard_cells: 8
     background_cells: 24
     pfa: 1.0e-10
     min_cluster_pixels: 6
     length_bias_m: 20
+    min_length_m: 30
+    min_confidence: 0.7
 land_mask:
   near_shore_m: 300
   exclusion_m: 100 # ignore everything within 100 m of land (quays, piers, moored boats)

@@ -53,6 +53,8 @@ class CaCfarDetector:
         merge_distance_px: int = 2,
         min_valid_fraction: float = 0.25,
         length_bias_m: float = 0.0,
+        min_length_m: float = 0.0,
+        min_confidence: float = 0.0,
         chunk_rows: int = 1024,
         max_hits: int = 2_000_000,
         version: str = "1",
@@ -73,6 +75,8 @@ class CaCfarDetector:
         if length_bias_m < 0:
             raise ValueError("length_bias_m must be >= 0")
         self.length_bias_m = length_bias_m
+        self.min_length_m = min_length_m
+        self.min_confidence = min_confidence
         self.chunk_rows = chunk_rows
         self.max_hits = max_hits
         self._half_in = guard_cells
@@ -94,6 +98,8 @@ class CaCfarDetector:
             "merge_distance_px": int,
             "min_valid_fraction": float,
             "length_bias_m": float,
+            "min_length_m": float,
+            "min_confidence": float,
             "version": str,
         }
         unknown = set(params) - set(known)
@@ -234,6 +240,7 @@ class CaCfarDetector:
                 pixel_box=(int(row0[i]), int(col0[i]), int(row1[i]), int(col1[i])),
             )
             for i in range(k)
+            if length[i] >= self.min_length_m and confidence[i] >= self.min_confidence
         ]
         result.sort(key=lambda d: d.pixel_box)
         return result
