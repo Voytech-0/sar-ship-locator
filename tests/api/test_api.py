@@ -544,6 +544,57 @@ def test_validated_scene_can_be_validated_again_without_a_raster(api: Api) -> No
     assert api.scene(SCENE_1)["status"] == "validated"
 
 
+def test_force_runs_a_succeeded_stage_again(api: Api) -> None:
+    api.discover()
+    for stage in ("fetch", "detect"):
+        api.run(stage, scene_body())
+    api.run("ais-load", {"region_id": "great-belt", "date": "2026-01-01"})
+    first = api.run("validate", scene_body())
+    assert first["status"] == "succeeded" and "rerun" not in first["input"]
+
+    same = api.submit("validate", scene_body())  # without force the succeeded Job is returned
+    assert same.status_code == 200 and same.json()["id"] == first["id"]
+
+    forced = api.submit("validate", {**scene_body(), "force": True})
+    assert forced.status_code == 202
+    assert forced.json()["id"] != first["id"] and forced.json()["input"] == {**scene_body(), "rerun": 1}
+    api.drain()
+    assert api.client.get(f"/v1/jobs/{forced.json()['id']}").json()["status"] == "succeeded"
+
+    again = api.submit("validate", {**scene_body(), "force": True})
+    assert again.status_code == 202 and again.json()["input"]["rerun"] == 2
+    api.drain()
+
+
+def test_force_returns_a_job_that_is_still_queued(api: Api) -> None:
+    api.discover()
+    for stage in ("fetch", "detect"):
+        api.run(stage, scene_body())
+    api.run("ais-load", {"region_id": "great-belt", "date": "2026-01-01"})
+    api.run("validate", scene_body())
+    first = api.submit("validate", {**scene_body(), "force": True})  # not drained: stays queued
+    second = api.submit("validate", {**scene_body(), "force": True})
+    assert second.status_code == 200 and second.json()["id"] == first.json()["id"]
+    api.drain()
+
+
+def test_force_does_not_skip_the_status_check(api: Api) -> None:
+    api.discover()
+    resp = api.submit("validate", {**scene_body(), "force": True})  # the Scene is only discovered
+    assert resp.status_code == 409
+
+
+def test_force_on_detect_keeps_the_detector_pin(api: Api) -> None:
+    api.discover()
+    api.run("fetch", scene_body())
+    first = api.run("detect", scene_body())
+    api.sql("UPDATE scenes SET status = 'fetched' WHERE scene_id = %s", (SCENE_1,))
+    forced = api.submit("detect", {**scene_body(), "force": True})
+    assert forced.status_code == 202 and forced.json()["id"] != first["id"]
+    assert forced.json()["input"]["detector"] == first["input"]["detector"]
+    api.drain()
+
+
 def test_vh_contrast_is_stored_and_served(api: Api) -> None:
     ring = [(10.7, 55.0), (11.3, 55.0), (11.3, 55.7), (10.7, 55.7), (10.7, 55.0)]
     api.discover()

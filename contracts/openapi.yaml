@@ -8,7 +8,8 @@ info:
 
     **Job idempotency.** A stage is identified by its name plus its request body. Submitting the same stage and
     input again returns the existing Job (`200`) while it is `queued`, `running` or `succeeded`. If the existing
-    Job `failed`, a new Job is created (`202`) so Airflow retries work.
+    Job `failed`, a new Job is created (`202`) so Airflow retries work. `force: true` on a Scene stage skips
+    the `succeeded` match and always creates a new Job (`202`) unless one is queued or running.
 
     **Scene status machine.** `discovered -> fetched -> detected -> validated`; any stage may move a Scene to
     `failed` (see `failed_stage`). Re-running a stage on a `failed` Scene resets it on success.
@@ -336,6 +337,13 @@ components:
       required: [scene_id]
       properties:
         scene_id: {$ref: '#/components/schemas/SceneId'}
+        force:
+          type: boolean
+          default: false
+          description: |
+            Run again although an identical Job already succeeded (for example `validate` after new AIS or
+            a new detector version). The new Job's `input` carries a `rerun` counter. A queued or running Job for
+            the same input is returned instead of starting another.
 
     DetectRequest:
       type: object
@@ -351,6 +359,10 @@ components:
           properties:
             name: {type: string, examples: [ca-cfar]}
             version: {type: [string, 'null'], examples: ['1']}  # null = the Region's configured version
+        force:
+          type: boolean
+          default: false
+          description: Same as on the other Scene stages.
 
     AisLoadRequest:
       type: object
@@ -376,7 +388,7 @@ components:
         stage: {$ref: '#/components/schemas/Stage'}
         input:
           type: object
-          description: The request body that created the Job.
+          description: The request body that created the Job, without `force`; a forced re-run adds a `rerun` counter.
         status: {$ref: '#/components/schemas/JobStatus'}
         created_at: {type: string, format: date-time}
         started_at: {type: [string, 'null'], format: date-time}
