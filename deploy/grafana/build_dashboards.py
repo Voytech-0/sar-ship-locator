@@ -443,8 +443,9 @@ LENGTH_AGREEMENT = (
     "         / NULLIF(count(*), 0) AS within_25_pct\n" + _LENGTH_FROM
 )
 LENGTH_BY_AIS_CLASS = (
-    "SELECT CASE WHEN av.length_m < 60 THEN '1: under 60 m' WHEN av.length_m < 120 THEN '2: 60-120 m'\n"
-    "            WHEN av.length_m < 200 THEN '3: 120-200 m' ELSE '4: 200 m or longer' END AS ais_length_class,\n"
+    "SELECT CASE WHEN av.length_m < 60 THEN '1: under 60 m'\n"
+    "            WHEN av.length_m < 120 THEN '2: 60-120 m' WHEN av.length_m < 200 THEN '3: 120-200 m'\n"
+    "            ELSE '4: 200 m or longer' END AS ais_length_class,\n"
     "       percentile_cont(0.5) WITHIN GROUP (ORDER BY av.length_m) AS ais_length_m,\n"
     "       percentile_cont(0.5) WITHIN GROUP (ORDER BY d.length_m) AS sar_length_m\n" + _LENGTH_FROM +
     "\nGROUP BY 1 ORDER BY 1"

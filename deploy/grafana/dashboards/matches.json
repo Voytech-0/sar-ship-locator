@@ -550,7 +550,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT CASE WHEN av.length_m < 60 THEN '1: under 60 m' WHEN av.length_m < 120 THEN '2: 60-120 m'\n            WHEN av.length_m < 200 THEN '3: 120-200 m' ELSE '4: 200 m or longer' END AS ais_length_class,\n       percentile_cont(0.5) WITHIN GROUP (ORDER BY av.length_m) AS ais_length_m,\n       percentile_cont(0.5) WITHIN GROUP (ORDER BY d.length_m) AS sar_length_m\nFROM validations v\nJOIN detections d ON d.id = v.detection_id\nJOIN scenes s ON s.scene_id = d.scene_id\nJOIN ais_vessels av ON av.mmsi = v.matched_mmsi\nWHERE $__timeFilter(s.acquired_at)\n  AND ('$shore' = 'All' OR d.shore::text = '$shore')\n  AND ('$detector' = 'All' OR d.detector_version = '$detector')\n  AND v.label = 'matched' AND d.length_m IS NOT NULL AND av.length_m IS NOT NULL\nGROUP BY 1 ORDER BY 1"
+          "rawSql": "SELECT CASE WHEN av.length_m < 60 THEN '1: under 60 m'\n            WHEN av.length_m < 120 THEN '2: 60-120 m' WHEN av.length_m < 200 THEN '3: 120-200 m'\n            ELSE '4: 200 m or longer' END AS ais_length_class,\n       percentile_cont(0.5) WITHIN GROUP (ORDER BY av.length_m) AS ais_length_m,\n       percentile_cont(0.5) WITHIN GROUP (ORDER BY d.length_m) AS sar_length_m\nFROM validations v\nJOIN detections d ON d.id = v.detection_id\nJOIN scenes s ON s.scene_id = d.scene_id\nJOIN ais_vessels av ON av.mmsi = v.matched_mmsi\nWHERE $__timeFilter(s.acquired_at)\n  AND ('$shore' = 'All' OR d.shore::text = '$shore')\n  AND ('$detector' = 'All' OR d.detector_version = '$detector')\n  AND v.label = 'matched' AND d.length_m IS NOT NULL AND av.length_m IS NOT NULL\nGROUP BY 1 ORDER BY 1"
         }
       ],
       "options": {
