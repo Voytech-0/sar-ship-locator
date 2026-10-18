@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from contracts.protocols import AisPosition, ObjectStore
+from contracts.protocols import AisPosition, ObjectStore, SarGeometry
 from pipeline import db
 from pipeline.algorithms.validator import NearestNeighbourValidator
 from pipeline.db import Database, Row
@@ -58,6 +58,7 @@ def export_scene(database: Database, store: ObjectStore, scene_id: str, out: Pat
         ).fetchall()
         margin = timedelta(minutes=TRACK_MINUTES)
         raw = db.list_ais_positions(conn, when - margin, when + margin)
+        stored = db.get_scene_geometry(conn, scene_id)
         static = {v["mmsi"]: v for v in db.list_ais_vessels(conn, sorted({p["mmsi"] for p in raw}))}
 
     scene_dir = out / scene_id
@@ -85,7 +86,9 @@ def export_scene(database: Database, store: ObjectStore, scene_id: str, out: Pat
     if preview:
         (south, west), (north, east) = preview["bounds"]
     vessels = []
-    for mmsi, (lon, lat) in NearestNeighbourValidator().tracks_at(positions, when).items():
+    validator = NearestNeighbourValidator()
+    in_image = validator.tracks_in_image(positions, when, SarGeometry(**stored) if stored else None)
+    for mmsi, (lon, lat) in validator.tracks_at(positions, when).items():
         m = BOUNDS_MARGIN_DEG
         if not (south - m <= lat <= north + m and west - m <= lon <= east + m):
             continue
@@ -98,6 +101,8 @@ def export_scene(database: Database, store: ObjectStore, scene_id: str, out: Pat
                 "mmsi": mmsi,
                 "lon": lon,
                 "lat": lat,
+                "image_lon": in_image[mmsi][0],  # where the ship appears in the SAR image (Doppler shift)
+                "image_lat": in_image[mmsi][1],
                 "sog_knots": sog,
                 "name": info.get("name"),
                 "ship_type": info.get("ship_type"),

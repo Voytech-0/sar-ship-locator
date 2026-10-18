@@ -29,8 +29,9 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 
-from contracts.protocols import AisPosition, DetectionRef, MatchLabel, ValidationResult
+from contracts.protocols import AisPosition, DetectionRef, MatchLabel, SarGeometry, ValidationResult
 from pipeline.algorithms.geo import meters_per_degree
+from pipeline.algorithms.sar_geometry import doppler_displacement_m
 
 _KNOT_MS = 0.514444
 
@@ -51,10 +52,11 @@ class NearestNeighbourValidator:
         positions: Iterable[AisPosition],
         acquired_at: datetime,
         gate_m: float,
+        geometry: SarGeometry | None = None,
     ) -> Sequence[ValidationResult]:
         if not detections:
             return []
-        tracks = self.tracks_at(positions, acquired_at)
+        tracks = self.tracks_in_image(positions, acquired_at, geometry)
         mmsis = list(tracks)
         det_ll = np.array([d.position for d in detections], dtype=np.float64)
         lon0, lat0 = float(det_ll[:, 0].mean()), float(det_ll[:, 1].mean())
@@ -103,6 +105,25 @@ class NearestNeighbourValidator:
         self, positions: Iterable[AisPosition], acquired_at: datetime
     ) -> dict[int, tuple[float, float]]:
         """Position of every trustworthy track at `acquired_at`, keyed by MMSI."""
+        return {m: (lon, lat) for m, (lon, lat, _, _) in self._tracks(positions, acquired_at).items()}
+
+    def tracks_in_image(
+        self, positions: Iterable[AisPosition], acquired_at: datetime, geometry: SarGeometry | None
+    ) -> dict[int, tuple[float, float]]:
+        """Where every trustworthy track appears in the SAR image (moved by the Doppler displacement)."""
+        out: dict[int, tuple[float, float]] = {}
+        for mmsi, (lon, lat, ve, vn) in self._tracks(positions, acquired_at).items():
+            if geometry is not None:
+                de, dn = doppler_displacement_m(geometry, ve, vn)
+                m_lon, m_lat = meters_per_degree(lat)
+                lon, lat = lon + de / m_lon, lat + dn / m_lat
+            out[mmsi] = (lon, lat)
+        return out
+
+    def _tracks(
+        self, positions: Iterable[AisPosition], acquired_at: datetime
+    ) -> dict[int, tuple[float, float, float, float]]:
+        """(lon, lat, east m/s, north m/s) of every trustworthy track at `acquired_at`; no SOG/COG = 0 m/s."""
         t0 = acquired_at.timestamp()
         samples: dict[int, list[_Sample]] = defaultdict(list)
         for p in positions:
@@ -110,24 +131,36 @@ class NearestNeighbourValidator:
             if abs(dt) <= self.max_gap_s:  # memory stays bounded when given a whole day of AIS
                 samples[p.mmsi].append((dt, p.position[0], p.position[1], p.sog_knots, p.cog_deg))
 
-        out: dict[int, tuple[float, float]] = {}
+        out: dict[int, tuple[float, float, float, float]] = {}
         for mmsi, rows in samples.items():
             rows.sort(key=lambda s: s[0])
             before = [s for s in rows if s[0] <= 0]
             after = [s for s in rows if s[0] >= 0]
             lo = before[-1] if before else None
             hi = after[0] if after else None
+            nearest = min((s for s in (lo, hi) if s is not None), key=lambda s: abs(s[0]), default=None)
             if lo is not None and hi is not None and (hi[0] - lo[0]) <= self.max_gap_s:
                 if hi[0] == lo[0]:
-                    out[mmsi] = (lo[1], lo[2])
+                    lon, lat = lo[1], lo[2]
                 else:
                     w = -lo[0] / (hi[0] - lo[0])
-                    out[mmsi] = (lo[1] + w * (hi[1] - lo[1]), lo[2] + w * (hi[2] - lo[2]))
+                    lon, lat = lo[1] + w * (hi[1] - lo[1]), lo[2] + w * (hi[2] - lo[2])
+            elif nearest is not None and abs(nearest[0]) <= self.max_extrapolation_s:
+                lon, lat = _dead_reckon(nearest)
+            else:
                 continue
-            nearest = min((s for s in (lo, hi) if s is not None), key=lambda s: abs(s[0]), default=None)
-            if nearest is not None and abs(nearest[0]) <= self.max_extrapolation_s:
-                out[mmsi] = _dead_reckon(nearest)
+            assert nearest is not None
+            out[mmsi] = (lon, lat, *_velocity(nearest))
         return out
+
+
+def _velocity(sample: _Sample) -> tuple[float, float]:
+    """(east, north) m/s from a sample's SOG/COG; (0, 0) when either is missing."""
+    _, _, _, sog, cog = sample
+    if sog is None or cog is None:
+        return 0.0, 0.0
+    bearing = math.radians(cog)
+    return sog * _KNOT_MS * math.sin(bearing), sog * _KNOT_MS * math.cos(bearing)
 
 
 def _dead_reckon(sample: _Sample) -> tuple[float, float]:

@@ -26,6 +26,7 @@ CREATE TABLE scenes (
     failed_stage  stage,
     error         text,
     raster_key    text,
+    sar_geometry  jsonb,  -- imaging geometry (SarGeometry) from the fetch stage, used by validation
     discovered_at timestamptz NOT NULL DEFAULT now(),
     updated_at    timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT failed_has_stage CHECK ((status = 'failed') = (failed_stage IS NOT NULL))

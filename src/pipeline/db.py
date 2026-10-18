@@ -183,6 +183,16 @@ def mark_scene_done(conn: Conn, scene_id: str, status: str, raster_key: str | No
     )
 
 
+def set_scene_geometry(conn: Conn, scene_id: str, geometry: dict[str, float]) -> None:
+    conn.execute("UPDATE scenes SET sar_geometry = %s WHERE scene_id = %s", (Jsonb(geometry), scene_id))
+
+
+def get_scene_geometry(conn: Conn, scene_id: str) -> dict[str, float] | None:
+    row = conn.execute("SELECT sar_geometry FROM scenes WHERE scene_id = %s", (scene_id,)).fetchone()
+    geometry: dict[str, float] | None = None if row is None else row["sar_geometry"]
+    return geometry
+
+
 def clear_raster_key(conn: Conn, scene_id: str) -> None:
     conn.execute("UPDATE scenes SET raster_key = NULL WHERE scene_id = %s", (scene_id,))
 

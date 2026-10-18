@@ -23,6 +23,50 @@
       <radarFrequency>5.405000454334350e+09</radarFrequency>
       <azimuthSteeringRate>1.590368784000000e+00</azimuthSteeringRate>
     </productInformation>
+    <orbitList count="3">
+      <orbit>
+        <time>2026-10-14T05:31:00.409057</time>
+        <frame>Earth Fixed</frame>
+        <position>
+          <x>3.382634883505000e+06</x>
+          <y>1.317200838040000e+06</y>
+          <z>6.063955817642000e+06</z>
+        </position>
+        <velocity>
+          <x>6.623667657000000e+03</x>
+          <y>6.127858900000000e+01</y>
+          <z>-3.699536017000000e+03</z>
+        </velocity>
+      </orbit>
+      <orbit>
+        <time>2026-10-14T05:31:10.409057</time>
+        <frame>Earth Fixed</frame>
+        <position>
+          <x>3.448681313519000e+06</x>
+          <y>1.317691647294000e+06</y>
+          <z>6.026619104164000e+06</z>
+        </position>
+        <velocity>
+          <x>6.585488933000000e+03</x>
+          <y>3.689155500000000e+01</y>
+          <z>-3.767736785000000e+03</z>
+        </velocity>
+      </orbit>
+      <orbit>
+        <time>2026-10-14T05:31:20.409057</time>
+        <frame>Earth Fixed</frame>
+        <position>
+          <x>3.514342082170000e+06</x>
+          <y>1.317938841522000e+06</y>
+          <z>5.988602492109000e+06</z>
+        </position>
+        <velocity>
+          <x>6.546536105000000e+03</x>
+          <y>1.255622600000000e+01</y>
+          <z>-3.835514452000000e+03</z>
+        </velocity>
+      </orbit>
+    </orbitList>
   </generalAnnotation>
   <imageAnnotation>
     <imageInformation>

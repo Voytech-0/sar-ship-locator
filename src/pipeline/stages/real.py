@@ -25,6 +25,7 @@ from contracts.protocols import (
     ObjectStore,
     PermanentError,
     Region,
+    SarGeometry,
     SceneFetcher,
     SceneRef,
     ShoreClass,
@@ -107,6 +108,8 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
         key = save_raster(services.store, raster)
         with ctx.db.connection() as conn:  # the Region data's own time, used for AIS matching
             db.set_scene_acquired_at(conn, request.scene_id, raster.acquired_at)
+            if raster.geometry is not None:
+                db.set_scene_geometry(conn, request.scene_id, dataclasses.asdict(raster.geometry))
         return FetchResult(raster_key=key, bytes_downloaded=raster.bytes_downloaded)
 
     def purge_expired_rasters(
@@ -234,6 +237,7 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
             margin = timedelta(minutes=cfg.validation.ais_margin_minutes)
             dets = db.list_detection_points(conn, request.scene_id)
             positions = db.list_ais_positions(conn, when - margin, when + margin)
+            stored = db.get_scene_geometry(conn, request.scene_id)
         results = services.validator.validate(
             [DetectionRef(d["id"], (d["lon"], d["lat"]), d["length_m"]) for d in dets],
             [
@@ -244,6 +248,7 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
             ],
             when,
             cfg.validation.gate_m,
+            SarGeometry(**stored) if stored else None,
         )
         counts = {"matched": 0, "unmatched": 0, "ambiguous": 0}
         with ctx.db.connection() as conn:

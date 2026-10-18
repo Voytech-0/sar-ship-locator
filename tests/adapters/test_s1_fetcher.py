@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
@@ -9,10 +11,12 @@ import tifffile
 
 from contracts.protocols import PermanentError, Region, SceneRef, TransientError
 from pipeline.adapters._retry import RetryPolicy
-from pipeline.adapters.s1_fetcher import Sentinel1S3Fetcher
+from pipeline.adapters.s1_fetcher import Sentinel1S3Fetcher, parse_geometry
 
 from . import synth
 from .conftest import FlakyClient, client_error
+
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 ACQUIRED = datetime(2026, 10, 14, 5, 32, 4, tzinfo=UTC)
 SHIP = (650, 250)
@@ -258,3 +262,17 @@ def test_geolocation_error_of_single_affine_is_reported(s3: Any, fast_retry: Ret
     assert f.last_diagnostics.affine_max_error_m == pytest.approx(
         f.last_diagnostics.affine_max_error_px * 10, rel=1e-6
     )
+
+
+def test_geometry_is_read_from_a_real_annotation() -> None:
+    xml = next((FIXTURES / "s3").rglob("annotation/s1d-iw-grd-vv-*.xml"))
+    geometry = parse_geometry(ET.parse(xml).getroot(), 800, 775)
+    assert geometry.heading_deg == pytest.approx(-163.6, abs=0.1)
+    assert geometry.speed_m_s == pytest.approx(7588, abs=20)
+    assert 800_000 < geometry.slant_range_m < 900_000
+    assert 30 < geometry.incidence_deg < 40
+
+
+def test_geometry_needs_orbit_vectors_and_a_grid() -> None:
+    with pytest.raises(ValueError, match="orbit"):
+        parse_geometry(ET.fromstring("<product><platformHeading>1</platformHeading></product>"), 0, 0)

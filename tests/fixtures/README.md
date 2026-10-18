@@ -24,7 +24,7 @@ Faithfulness to the real product, checked by `tests/fixtures_check`:
 - no CRS or pixel scale; geolocation is only the 20 GCPs in `ModelTiepointTag` (`I, J, 0, lon, lat, 0`)
 - the GCPs were bilinearly resampled from the real 10 x 21 lattice onto the crop, so positions agree with the real product up to the interpolation error
 - calibration LUTs (sigma0, beta0, gamma, dn) were linearly resampled from the real vectors onto the crop grid (3 vectors, every 40th pixel)
-- annotation is a trimmed copy: only `adsHeader`, `productInformation`, `imageInformation` (slice list removed) and `geolocationGrid` remain. **Noise annotation is not included**, so thermal noise removal is not exercised.
+- annotation is a trimmed copy: only `adsHeader`, `productInformation`, three `orbitList` state vectors, `imageInformation` (slice list removed) and `geolocationGrid` remain. **Noise annotation is not included**, so thermal noise removal is not exercised.
 
 `scene/meta.json`: scene id, `acquired_at` (time of the crop's first line), `azimuth_time_interval_s` (seconds per row, so a pixel's time is `acquired_at + row * interval`), footprint ring, GCPs, S3 keys, and the real OData record the fake catalogue mimics. Catalogue footprint and times describe the **crop**, not the full real product.
 

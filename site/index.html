@@ -93,7 +93,7 @@ function draw() {
       color: isDark(d) ? css('--dark') : '#000', fillColor: css(COLORS[d.label] || '--muted'), fillOpacity: .9 })
       .bindPopup(popup(d, byMmsi[d.matched_mmsi])).addTo(g.det);
     const v = byMmsi[d.matched_mmsi];
-    if (v) L.polyline([[d.lat, d.lon], [v.lat, v.lon]], { color: css('--matched'), weight: 2, dashArray: '4 3' }).addTo(g.links);
+    if (v) L.polyline([[d.lat, d.lon], [v.image_lat, v.image_lon]], { color: css('--matched'), weight: 2, dashArray: '4 3' }).addTo(g.links);
   }
   for (const v of scene.ais) {
     const t = v.track.map(p => [p[1], p[0]]);

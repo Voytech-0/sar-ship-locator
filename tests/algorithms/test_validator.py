@@ -1,9 +1,11 @@
+import math
 from datetime import timedelta
 
 import pytest
 
-from contracts.protocols import AisPosition, DetectionRef, MatchLabel, ValidationResult
+from contracts.protocols import AisPosition, DetectionRef, MatchLabel, SarGeometry, ValidationResult
 from pipeline.algorithms import NearestNeighbourValidator
+from pipeline.algorithms.sar_geometry import doppler_displacement_m
 from tests.algorithms.synthetic import ACQUIRED
 
 LAT, LON = 55.35, 10.97
@@ -145,3 +147,57 @@ def test_consumes_a_generator_of_positions() -> None:
     gen = (p for p in [ais(219000001, 0, 100, 0)])
     results = NearestNeighbourValidator().validate([det("a")], gen, ACQUIRED, 500)
     assert results[0].label == MatchLabel.MATCHED
+
+
+# Descending pass: heading 196 degrees (south-south-west), looking 90 degrees clockwise, i.e. west-north-west.
+GEOMETRY = SarGeometry(heading_deg=-163.6, speed_m_s=7588.0, slant_range_m=867_000.0, incidence_deg=37.9)
+
+
+def test_doppler_displacement_of_a_ship_moving_away_from_the_sensor() -> None:
+    look = math.radians(GEOMETRY.heading_deg + 90)
+    u = 5.0  # m/s along the look direction, away from the sensor
+    de, dn = doppler_displacement_m(GEOMETRY, u * math.sin(look), u * math.cos(look))
+    expected = 867_000 / 7588 * math.sin(math.radians(37.9)) * u  # about 350 m
+    assert math.hypot(de, dn) == pytest.approx(expected, rel=1e-6)
+    # backwards along the platform track (heading 196.4 degrees)
+    heading = math.radians(GEOMETRY.heading_deg)
+    assert de * math.sin(heading) + dn * math.cos(heading) == pytest.approx(-expected, rel=1e-6)
+
+
+def test_ship_moving_along_the_track_or_standing_still_is_not_displaced() -> None:
+    heading = math.radians(GEOMETRY.heading_deg)
+    assert doppler_displacement_m(GEOMETRY, 0.0, 0.0) == (0.0, 0.0)
+    de, dn = doppler_displacement_m(GEOMETRY, 8 * math.sin(heading), 8 * math.cos(heading))
+    assert math.hypot(de, dn) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_moving_ship_matches_only_once_the_displacement_is_applied() -> None:
+    look = math.radians(GEOMETRY.heading_deg + 90)
+    knots = 10.0
+    cog = math.degrees(look) % 360  # sailing away from the sensor
+    track = [ais(219000001, dt, 0, 0, knots, cog) for dt in (-5, 5)]
+    de, dn = doppler_displacement_m(
+        GEOMETRY, knots * 0.514444 * math.sin(look), knots * 0.514444 * math.cos(look)
+    )
+    dets = [det("a", de, dn)]  # the SAR image shows the ship displaced
+
+    plain = {r.detection_id: r for r in NearestNeighbourValidator().validate(dets, track, ACQUIRED, 150)}
+    shifted = {
+        r.detection_id: r for r in NearestNeighbourValidator().validate(dets, track, ACQUIRED, 150, GEOMETRY)
+    }
+
+    assert math.hypot(de, dn) > 250
+    assert plain["a"].label == MatchLabel.UNMATCHED
+    assert shifted["a"].label == MatchLabel.MATCHED
+    assert shifted["a"].match_distance_m == pytest.approx(0, abs=5)
+
+
+def test_a_standing_ship_is_unaffected_by_the_geometry() -> None:
+    r = {
+        x.detection_id: x
+        for x in NearestNeighbourValidator().validate(
+            [det("a", 40)], [ais(219000001, 0)], ACQUIRED, 150, GEOMETRY
+        )
+    }
+    assert r["a"].label == MatchLabel.MATCHED
+    assert r["a"].match_distance_m == pytest.approx(40, abs=3)

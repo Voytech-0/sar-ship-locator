@@ -22,7 +22,7 @@ Automated pipeline: Sentinel-1 GRD scenes of the Great Belt are ingested daily, 
 
 Everything runs: `docker compose up -d --build --wait` starts the whole system (PostGIS, migrations, SeaweedFS object store, land polygon init job, pipeline-api, Prometheus, Grafana, Airflow) in about 30 s once the land file exists. The first real run through Airflow ingested real Sentinel-1 scenes end to end. CI has jobs for Python (lint, mypy, tests incl. Docker), schema, `dags/`, and a compose config and image build.
 
-Gate: `make ci` (ruff, strict mypy, about 360 tests, Docker needed); `dags/` is its own uv project (`cd dags && uv sync && uv run pytest`, 43 tests).
+Gate: `make ci` (ruff, strict mypy, about 366 tests, Docker needed); `dags/` is its own uv project (`cd dags && uv sync && uv run pytest`, 43 tests).
 
 ## How the pieces fit
 
@@ -59,7 +59,12 @@ Detector `version` now labels a parameter set and comes from the Region config (
 
 `land_mask.exclusion_m` (Region config, now 100): Detections within 100 m of land are ignored like land (quays, piers, moored boats); `near_shore_m` (300) still only flags. `PolygonLandMask` removes the zone from the detection mask and classifies positions inside it as ON_LAND. Offline on three scenes: near-shore Detections 590 to 31, matched ships 47 to 47. Re-run on the live stack: total Detections 827 to 241, near-shore about 590 to 48.
 
-Grafana has a third dashboard, Match analysis (`sar-matches`): outcome counts, match rate and median/p90 distance, a histogram of match distances, outcome by length and by confidence, median distance by AIS speed, per-scene table, a map of matches coloured by distance, and review tables with chips (furthest matches, ambiguous, longest unmatched). Variables: Shore (default open water) and Detector version. First readings on real data: Detections of 100 m or longer are matched 73-100 percent of the time, below 100 m only 9-15 percent; match distance grows with vessel speed (median 50 m at 0-3 kn, 120-180 m above), which points at the per-Detection acquisition time not being used yet (open item).
+Grafana has a third dashboard, Match analysis (`sar-matches`): outcome counts, match rate and median/p90 distance, a histogram of match distances, outcome by length and by confidence, median distance by AIS speed, per-scene table, a map of matches coloured by distance, and review tables with chips (furthest matches, ambiguous, longest unmatched). Variables: Shore (default open water) and Detector version. First readings on real data: Detections of 100 m or longer are matched 73-100 percent of the time, below 100 m only 9-15 percent; match distance grows with vessel speed (median 50 m at 0-3 kn, 120-180 m above), which turned out to be the Doppler azimuth displacement of moving ships, not timing (next section).
+
+
+## Doppler displacement of moving ships (2026-10-18)
+
+A fit over the 47 moving matched ships showed that the azimuth offset between Detection and AIS follows the ship's velocity along the look direction (slope -60 s, r = -0.87), while the offset along the ship's own course against speed has r = -0.03: the cause is the Doppler displacement `(R/V) sin(theta) u_away` (about 60-70 s times the speed away from the sensor, so 5 m/s is 300+ m), not acquisition timing. `fetch` now reads `SarGeometry` (platform heading, speed from the orbit vectors, slant range and incidence near the window centre) from the VV annotation into `scenes.sar_geometry` (migration 0006); `Validator.validate` takes it and moves every AIS track by `algorithms/sar_geometry.doppler_displacement_m` before matching. Re-run on all 9 Scenes: median match distance 131 to 74 m, p90 295 to 118 m, matched count unchanged (58); distance by speed class is now 53 m at 0-3 kn and 100 m above 13 kn (was 50 vs 120-180). The site draws match links to the displaced AIS position (`image_lon`/`image_lat`). Scenes fetched before migration 0006 have no geometry and validate as before; re-fetch them (allowed once the raster is gone).
 
 ## Review website (2026-10-17)
 
@@ -91,4 +96,4 @@ Grafana has a third dashboard, Match analysis (`sar-matches`): outcome counts, m
 3. **Re-processing:** done (2026-10-18). The raster is kept `retention.raster_days` (14) after the last stage; `detect` runs again on `detected`/`validated` Scenes while it exists (new Job per `detector.version`, old versions' Detections stay), `fetch` runs again once it is gone. Then `validate` again.
 4. **Docs:** done (ADR-0004, ADR-0001, PLAN amended 2026-10-18).
 5. **Cleanup:** done except flakiness: one schemathesis subtest failed once in a full-suite run and did not reproduce in 5 reruns (watch for it). AIS parsing now lives only in `algorithms/ais_dma.py` (`adapters/dma.py` downloads and unzips, then calls it); static vessel data goes to `ais_vessels`.
-6. **Not done:** per-Detection acquisition time for validation (match distance grows with vessel speed, so this is the likely biggest accuracy gain); Grafana panels checked against real data; alerting beyond the two rules.
+6. **Not done:** per-Detection row time for validation (now second order, about 40 m for a 15 kn ship); Grafana panels checked against real data; alerting beyond the two rules; gate_m (500) could probably drop to about 250 now that p90 is 118 m.

@@ -56,6 +56,21 @@ class SceneRef:
 
 
 @dataclass(frozen=True)
+class SarGeometry:
+    """Imaging geometry of a Scene's Region window, from the product annotation (right-looking sensor).
+
+    A ship moving in range is displaced along the platform track in the image by about
+    `slant_range_m / speed_m_s * sin(incidence)` times its ground speed along the look direction, so a
+    moving ship appears hundreds of metres from where AIS puts it. The Validator corrects for that.
+    """
+
+    heading_deg: float  # platform heading, degrees clockwise from north
+    speed_m_s: float  # platform speed
+    slant_range_m: float
+    incidence_deg: float
+
+
+@dataclass(frozen=True)
 class SceneRaster:
     """A Scene cropped to its Region, ready for detection."""
 
@@ -69,6 +84,7 @@ class SceneRaster:
     # None means `transform` is exact (synthetic rasters, tests).
     geolocate: Geolocator | None = None
     bytes_downloaded: int = 0  # set by the fetcher; feeds FetchResult.bytes_downloaded
+    geometry: SarGeometry | None = None  # set by the fetcher when the annotation has it
 
 
 @dataclass(frozen=True)
@@ -161,8 +177,10 @@ class Validator(Protocol):
         positions: Iterable[AisPosition],
         acquired_at: datetime,
         gate_m: float,
+        geometry: SarGeometry | None = None,
     ) -> Sequence[ValidationResult]:
         """Interpolate AIS tracks to `acquired_at`, match nearest-neighbour one-to-one within `gate_m`.
+        With `geometry`, each track is first moved to where a moving ship appears in the SAR image.
         A Detection with more than one track in the gate is AMBIGUOUS, one with none is UNMATCHED."""
         ...
 

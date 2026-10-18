@@ -116,6 +116,9 @@ def test_fixture_scene_through_all_five_stages(
     assert store.exists(f"scenes/{SCENE_ID}/sigma0.npy")
     stored = api.scene(SCENE_ID)
     assert stored["status"] == "fetched"
+    geometry = api.sql("SELECT sar_geometry FROM scenes WHERE scene_id = %s", (SCENE_ID,))[0]["sar_geometry"]
+    assert set(geometry) == {"heading_deg", "speed_m_s", "slant_range_m", "incidence_deg"}
+    assert 7000 < geometry["speed_m_s"] < 8000
     # acquired_at is now the time of the Region data's centre row, a little after the crop's first line
     assert datetime.fromisoformat(stored["acquired_at"]) != ACQUIRED.astimezone(UTC)
 
