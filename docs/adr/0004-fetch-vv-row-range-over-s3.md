@@ -16,4 +16,5 @@ A spike (2026-10-17, one S1D IW GRDH scene over the Great Belt) found that the V
 - Bandwidth, not request count, is the limit (8 parallel streams were no faster than one), so concurrency stays low.
 - The Region's pixel window is found by interpolating GCPs. A global 2nd-order polynomial fit was off by up to 14 px (140 m): fine for choosing a window with margin, not for final Detection geolocation, which needs per-row GCP interpolation.
 - A Scene can cover only part of the Region (the test scene ended 15% short): crop to the intersection.
+- Real files are little-endian and the TIFF directory (IFD) sits at the end of the file, so the fetcher cannot read strip offsets from the first bytes: it reads the tail first. A big-endian test fixture once hid a byte-order bug here; fixtures must match the real layout.
 - Calibration (DN to sigma0) from `annotation/calibration/*.xml` is still unverified.

@@ -11,4 +11,4 @@ The pipeline (poll Copernicus, download and crop, detect, load, validate) is orc
 
 ## Consequences
 
-DAGs stay thin and only call the pipeline API (see ADR-0002). Airflow's own Postgres is separate from the PostGIS application database.
+Airflow 3 runs as api-server, scheduler, dag-processor and triggerer (the deferrable operators need it) plus its own database. DAGs stay thin and only call the pipeline API (see ADR-0002). Airflow's own Postgres is separate from the PostGIS application database.

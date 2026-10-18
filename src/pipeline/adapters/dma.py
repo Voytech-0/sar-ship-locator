@@ -5,13 +5,13 @@ The zip is downloaded to a temporary file (a zip needs random access to its cent
 CSV is streamed row by row, so memory stays flat even though a day is about 700 MB.
 
 CSV columns (checked against 2026-10-14): `# Timestamp` (dd/mm/yyyy HH:MM:SS, UTC), `Type of mobile`,
-`MMSI`, `Latitude`, `Longitude`, `SOG`, `COG`, `Heading`, plus vessel metadata that we ignore. The file
+`MMSI`, `Latitude`, `Longitude`, `SOG`, `COG`, `Heading`, plus vessel metadata (name, type, length,
+width). The file
 contains duplicate rows and non-vessel stations (base stations, aids to navigation), which are dropped.
 """
 
 from __future__ import annotations
 
-import csv
 import io
 import logging
 import tempfile
@@ -21,22 +21,15 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import httpx
-import shapely
-from shapely.geometry import Polygon
 
 from contracts.protocols import AisPosition, NotAvailableError, PermanentError, Region
+from pipeline.algorithms.ais_dma import iter_dma_positions
 
 from ._retry import RetryPolicy
-from .s1_geo import ring_to_polygon
 
 log = logging.getLogger(__name__)
 
 BASE_URL = "https://s3.eu-central-1.amazonaws.com/aisdata.ais.dk"
-_VESSEL_TYPES = {"Class A", "Class B"}
-_REQUIRED = ("Timestamp", "Type of mobile", "MMSI", "Latitude", "Longitude", "SOG", "COG", "Heading")
-
-
-_OPTIONAL = ("Name", "Ship type", "Length", "Width")
 
 
 class _RetryableHttp(Exception):
@@ -45,25 +38,6 @@ class _RetryableHttp(Exception):
 
 def _today_utc() -> date:
     return datetime.now(UTC).date()
-
-
-def _opt_float(value: str) -> float | None:
-    try:
-        return float(value) if value else None
-    except ValueError:
-        return None
-
-
-def _text(row: list[str], opt: dict[str, int], name: str) -> str | None:
-    i = opt.get(name)
-    value = row[i].strip() if i is not None and i < len(row) else ""
-    return value if value and value.lower() not in ("undefined", "unknown") else None
-
-
-def _positive(row: list[str], opt: dict[str, int], name: str) -> float | None:
-    i = opt.get(name)
-    value = _opt_float(row[i].strip()) if i is not None and i < len(row) else None
-    return value if value is not None and value > 0 else None
 
 
 class DmaAisSource:
@@ -121,7 +95,6 @@ class DmaAisSource:
 
     def positions(self, day: date, region: Region) -> Iterable[AisPosition]:
         """All vessel AIS Positions of one UTC day inside the Region. Downloads eagerly, parses lazily."""
-        polygon = ring_to_polygon(region.polygon)
         size = self._head(day)
         if size is None:
             raise NotAvailableError(f"AIS archive for {day} is not published")
@@ -129,7 +102,7 @@ class DmaAisSource:
         try:
             path = Path(tmp.name) / f"aisdk-{day:%Y-%m-%d}.zip"
             self._download(day, path, size)
-            return self._rows(path, polygon, tmp)
+            return self._rows(path, region, tmp)
         except BaseException:
             tmp.cleanup()
             raise
@@ -165,7 +138,7 @@ class DmaAisSource:
         self._retry.call(once, lambda e: isinstance(e, _RetryableHttp), f"GET AIS {day}")
 
     @staticmethod
-    def _rows(path: Path, polygon: Polygon, tmp: tempfile.TemporaryDirectory[str]) -> Iterator[AisPosition]:
+    def _rows(path: Path, region: Region, tmp: tempfile.TemporaryDirectory[str]) -> Iterator[AisPosition]:
         try:
             try:
                 zf = zipfile.ZipFile(path)
@@ -176,52 +149,11 @@ class DmaAisSource:
                 if len(names) != 1:
                     raise PermanentError(f"{path.name}: expected one CSV, found {names}")
                 with zf.open(names[0]) as raw:
-                    reader = csv.reader(io.TextIOWrapper(raw, encoding="utf-8", errors="replace", newline=""))
-                    header = [h.lstrip("# ").strip() for h in next(reader, [])]
-                    missing = [c for c in _REQUIRED if c not in header]
-                    if missing:
-                        raise PermanentError(f"{path.name}: CSV lacks columns {missing}")
-                    col = {name: header.index(name) for name in (*_REQUIRED, *_OPTIONAL) if name in header}
-                    yield from _filter(reader, col, polygon)
+                    try:
+                        yield from iter_dma_positions(
+                            io.TextIOWrapper(raw, encoding="utf-8", newline=""), region
+                        )
+                    except ValueError as exc:  # header lacks required columns
+                        raise PermanentError(f"{path.name}: {exc}") from exc
         finally:
             tmp.cleanup()
-
-
-def _filter(reader: Iterator[list[str]], col: dict[str, int], polygon: Polygon) -> Iterator[AisPosition]:
-    min_lon, min_lat, max_lon, max_lat = polygon.bounds
-    seen: set[tuple[int, datetime]] = set()
-    need = max(col[c] for c in _REQUIRED) + 1
-    opt = {k: v for k, v in col.items() if k in _OPTIONAL}
-    for row in reader:
-        if len(row) < need or row[col["Type of mobile"]] not in _VESSEL_TYPES:
-            continue
-        try:
-            lat = float(row[col["Latitude"]])
-            lon = float(row[col["Longitude"]])
-        except ValueError:
-            continue
-        if not (min_lat <= lat <= max_lat and min_lon <= lon <= max_lon):
-            continue
-        if not shapely.contains_xy(polygon, lon, lat):
-            continue
-        try:
-            mmsi = int(row[col["MMSI"]])
-            ts = datetime.strptime(row[col["Timestamp"]], "%d/%m/%Y %H:%M:%S").replace(tzinfo=UTC)
-        except ValueError:
-            continue
-        if not 100_000_000 <= mmsi <= 999_999_999 or (mmsi, ts) in seen:
-            continue
-        seen.add((mmsi, ts))
-        heading = _opt_float(row[col["Heading"]])
-        yield AisPosition(
-            mmsi=mmsi,
-            ts=ts,
-            position=(lon, lat),
-            sog_knots=_opt_float(row[col["SOG"]]),
-            cog_deg=_opt_float(row[col["COG"]]),
-            heading=int(heading) if heading is not None and 0 <= heading < 360 else None,
-            name=_text(row, opt, "Name"),
-            ship_type=_text(row, opt, "Ship type"),
-            length_m=_positive(row, opt, "Length"),
-            width_m=_positive(row, opt, "Width"),
-        )
