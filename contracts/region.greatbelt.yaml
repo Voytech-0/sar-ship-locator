@@ -27,4 +27,4 @@ validation:
   gate_m: 500
   ais_margin_minutes: 30
 retention:
-  delete_raster_after_detect: true
+  raster_days: 14

@@ -109,6 +109,19 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
             db.set_scene_acquired_at(conn, request.scene_id, raster.acquired_at)
         return FetchResult(raster_key=key, bytes_downloaded=raster.bytes_downloaded)
 
+    def purge_expired_rasters(
+        ctx: StageContext, store: ObjectStore, cfg: RegionConfig, keep_scene_id: str
+    ) -> None:
+        """Opportunistic retention: drop rasters older than `raster_days` whenever a detect finishes."""
+        with ctx.db.connection() as conn:
+            expired = db.list_expired_raster_scenes(
+                conn, cfg.region_id, cfg.retention.raster_days, keep_scene_id
+            )
+        for scene_id in expired:
+            delete_raster(store, scene_id)
+            with ctx.db.connection() as conn:
+                db.clear_raster_key(conn, scene_id)
+
     def detect(ctx: StageContext, request: DetectRequest) -> DetectResult:
         cfg = region_for_scene(ctx, request.scene_id)
         pinned = request.detector
@@ -161,8 +174,11 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
         preview = make_preview(raster)  # the raster is deleted below, so the preview is made now
         if preview:
             save_preview(services.store, request.scene_id, preview)
-        if cfg.retention.delete_raster_after_detect:
+        if cfg.retention.raster_days == 0:
             delete_raster(services.store, request.scene_id)
+            with ctx.db.connection() as conn:
+                db.clear_raster_key(conn, request.scene_id)
+        purge_expired_rasters(ctx, services.store, cfg, request.scene_id)
         for shore_name in ("open_water", "near_shore"):
             n = sum(1 for _, s in kept if s.value == shore_name)
             if n:

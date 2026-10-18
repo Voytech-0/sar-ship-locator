@@ -183,6 +183,23 @@ def mark_scene_done(conn: Conn, scene_id: str, status: str, raster_key: str | No
     )
 
 
+def clear_raster_key(conn: Conn, scene_id: str) -> None:
+    conn.execute("UPDATE scenes SET raster_key = NULL WHERE scene_id = %s", (scene_id,))
+
+
+def list_expired_raster_scenes(conn: Conn, region_id: str, days: int, except_scene_id: str) -> list[str]:
+    """Scenes of a Region that still hold a raster although their last stage ended more than `days` ago."""
+    rows = conn.execute(
+        """
+        SELECT scene_id FROM scenes
+        WHERE region_id = %s AND raster_key IS NOT NULL AND status IN ('detected', 'validated')
+          AND updated_at < now() - make_interval(days => %s) AND scene_id <> %s
+        """,
+        (region_id, days, except_scene_id),
+    ).fetchall()
+    return [r["scene_id"] for r in rows]
+
+
 def get_scene_start(conn: Conn, scene_id: str) -> datetime:
     """The catalogue acquisition time (start of the acquisition); unlike `acquired_at` it never changes."""
     row = conn.execute("SELECT acquired_start FROM scenes WHERE scene_id = %s", (scene_id,)).fetchone()

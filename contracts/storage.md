@@ -17,6 +17,6 @@ One bucket in the S3-compatible object store, `sar`. All keys are relative to it
 ## Rules
 
 - `scene_id` and `detection_id` are used verbatim in keys. No other path components are user-controlled.
-- Raw GRD products are never stored. Only the cropped raster is, and it may be deleted once the Scene is `detected` (config flag `retention.delete_raster_after_detect`).
+- Raw GRD products are never stored. Only the cropped raster is, and it is kept for `retention.raster_days` after the Scene's last stage so `detect` can run again (0 = deleted right after `detect`). Expired rasters are removed whenever a `detect` finishes.
 - Chips are kept indefinitely. A Chip's label lives in Postgres (`validations`), never in the key.
 - `datasets/{version}/` is immutable once written; a new export gets a new `version`.

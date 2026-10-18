@@ -227,10 +227,32 @@ def test_stage_on_discovered_scene_is_409(api: Api, stage: str) -> None:
     assert api.sql("SELECT count(*)::int AS n FROM jobs WHERE stage <> 'discover'")[0]["n"] == 0
 
 
-def test_fetch_on_advanced_scene_without_job_is_409(api: Api) -> None:
+def test_fetch_on_advanced_scene_with_stored_raster_is_409(api: Api) -> None:
     api.discover()
-    api.sql("UPDATE scenes SET status = 'detected' WHERE scene_id = %s", (SCENE_1,))
+    api.sql("UPDATE scenes SET status = 'detected', raster_key = 'x' WHERE scene_id = %s", (SCENE_1,))
     assert api.submit("fetch", scene_body()).status_code == 409
+
+
+def test_processed_scene_can_be_fetched_again_once_its_raster_is_gone(api: Api) -> None:
+    api.discover()
+    api.sql("UPDATE scenes SET status = 'validated', raster_key = NULL WHERE scene_id = %s", (SCENE_1,))
+    assert api.submit("fetch", scene_body()).status_code == 202
+
+
+def test_processed_scene_is_detected_again_only_while_its_raster_is_stored(api: Api) -> None:
+    api.discover()
+    api.sql("UPDATE scenes SET status = 'validated', raster_key = NULL WHERE scene_id = %s", (SCENE_1,))
+    assert api.submit("detect", scene_body()).status_code == 409
+    api.sql("UPDATE scenes SET raster_key = 'x' WHERE scene_id = %s", (SCENE_1,))
+    assert api.submit("detect", scene_body()).status_code == 202
+    assert api.scene(SCENE_1)["status"] == "validated"
+
+
+def test_detect_job_is_pinned_to_the_region_detector_version(api: Api) -> None:
+    api.discover()
+    api.run("fetch", scene_body())
+    job = api.run("detect", scene_body())
+    assert set(job["input"]["detector"]) == {"name", "version"}
 
 
 def test_failed_scene_only_accepts_the_stage_that_failed(
@@ -247,12 +269,10 @@ def test_failed_scene_only_accepts_the_stage_that_failed(
 def test_stale_job_fails_without_clobbering_scene_status(api: Api) -> None:
     api.discover()
     resp = api.submit("fetch", scene_body())
-    api.sql("UPDATE scenes SET status = 'detected' WHERE scene_id = %s", (SCENE_1,))
+    api.sql("UPDATE scenes SET status = 'detected', raster_key = 'x' WHERE scene_id = %s", (SCENE_1,))
     api.drain()
     job = api.client.get(f"/v1/jobs/{resp.json()['id']}").json()
-    assert (
-        job["status"] == "failed" and job["error_retryable"] is False and "needs discovered" in job["error"]
-    )
+    assert job["status"] == "failed" and job["error_retryable"] is False and "stored raster" in job["error"]
     assert api.scene(SCENE_1)["status"] == "detected"
 
 

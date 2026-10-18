@@ -40,7 +40,9 @@ class ValidationConfig(_Strict):
 
 
 class RetentionConfig(_Strict):
-    delete_raster_after_detect: bool
+    raster_days: int = Field(
+        ge=0
+    )  # days to keep the cropped raster after the Scene's last stage; 0 = delete at once
 
 
 class RegionConfig(_Strict):

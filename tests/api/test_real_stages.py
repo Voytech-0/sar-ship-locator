@@ -125,7 +125,7 @@ def test_fixture_scene_through_all_five_stages(
     print("detect result:", result)
     assert result["detector_name"] == "ca-cfar"
     # land is masked before detection, so the island spot is never found
-    assert not store.exists(f"scenes/{SCENE_ID}/sigma0.npy"), "raster is deleted after detect (retention)"
+    assert store.exists(f"scenes/{SCENE_ID}/sigma0.npy"), "raster is kept for raster_days (re-detection)"
 
     assert store.exists(f"scenes/{SCENE_ID}/preview.png"), "the preview outlives the raster"
     bounds = json.loads(store.get(f"scenes/{SCENE_ID}/preview.json"))["bounds"]
@@ -181,3 +181,63 @@ def test_refetching_does_not_shift_the_acquisition_time(
     fetch(ctx, request)
     assert api.scene(SCENE_ID)["acquired_at"] == first
     assert datetime.fromisoformat(first) != ACQUIRED  # it was moved once, from the catalogue start
+
+
+def test_redetect_with_a_new_version_keeps_the_old_detections(
+    pipeline: tuple[Api, S3ObjectStore, dict[str, Any]],
+) -> None:
+    api, store, _ = pipeline
+    api.discover()
+    api.run("fetch", {"scene_id": SCENE_ID})
+    first = api.run("detect", {"scene_id": SCENE_ID})
+    api.sql("UPDATE scenes SET status = 'validated' WHERE scene_id = %s", (SCENE_ID,))
+
+    api.app.state.config.regions[
+        "great-belt"
+    ].detector.version = "3"  # the Region config labels a new parameter set
+    again = api.run("detect", {"scene_id": SCENE_ID})
+
+    assert again["status"] == "succeeded", again
+    assert again["result"]["detector_version"] == "3"
+    assert api.scene(SCENE_ID)["status"] == "detected"  # validation has to run again
+    new, old = again["result"], first["result"]
+    for version, count in (("3", new["detection_count"]), (old["detector_version"], old["detection_count"])):
+        found = api.client.get(f"/v1/scenes/{SCENE_ID}/detections", params={"detector_version": version})
+        assert len(found.json()["features"]) == count
+    assert store.exists(f"scenes/{SCENE_ID}/sigma0.npy")
+
+
+def test_raster_days_zero_deletes_the_raster_after_detect(
+    pipeline: tuple[Api, S3ObjectStore, dict[str, Any]],
+) -> None:
+    api, store, _ = pipeline
+    api.app.state.config.regions["great-belt"].retention.raster_days = 0
+    api.discover()
+    api.run("fetch", {"scene_id": SCENE_ID})
+    api.run("detect", {"scene_id": SCENE_ID})
+    assert not store.exists(f"scenes/{SCENE_ID}/sigma0.npy")
+    assert api.sql("SELECT raster_key FROM scenes WHERE scene_id = %s", (SCENE_ID,))[0]["raster_key"] is None
+    api.app.state.config.regions["great-belt"].detector.version = "3"
+    assert api.submit("detect", {"scene_id": SCENE_ID}).status_code == 409  # a new fetch has to come first
+
+
+def test_detect_purges_other_scenes_rasters_older_than_raster_days(
+    pipeline: tuple[Api, S3ObjectStore, dict[str, Any]],
+) -> None:
+    api, store, _ = pipeline
+    api.discover()
+    api.sql(
+        "INSERT INTO scenes (scene_id, region_id, acquired_at, footprint, status, raster_key) "
+        "SELECT 'OLD', region_id, acquired_at, footprint, 'validated', 'scenes/OLD/sigma0.npy' "
+        "FROM scenes WHERE scene_id = %s",
+        (SCENE_ID,),
+    )
+    api.sql("UPDATE scenes SET updated_at = now() - interval '30 days' WHERE scene_id = 'OLD'")
+    store.put("scenes/OLD/sigma0.npy", b"x", "application/octet-stream")
+    api.run("fetch", {"scene_id": SCENE_ID})
+
+    api.run("detect", {"scene_id": SCENE_ID})
+
+    assert not store.exists("scenes/OLD/sigma0.npy")
+    assert api.sql("SELECT raster_key FROM scenes WHERE scene_id = 'OLD'")[0]["raster_key"] is None
+    assert store.exists(f"scenes/{SCENE_ID}/sigma0.npy"), "a fresh raster is kept"
