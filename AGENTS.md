@@ -91,7 +91,7 @@ Residual analysis after the Doppler correction (58 matched open-water ships): th
 - **Geolocation:** one affine over the full window is off by up to 197 m; the pipeline uses the GCP-based `geolocate`.
 - **API:** a succeeded Job dedupes forever on (stage, input) (the `discover` DAG sends a changing `since`). `detect` needs a stored raster (see Open items 3).
 - **Airflow:** 3.3.2, deferrable operators (needs a triggerer). Admin password of the simple auth manager is printed in the api-server logs.
-- **Observability:** Grafana dashboards and Prometheus are up in the stack; rate/increase panels still unproven (needs a few minutes of real data).
+- **Observability:** Grafana dashboards and Prometheus are up in the stack. On 2026-10-18 every SQL panel (through Grafana's query API) and every Prometheus panel expression returned data on the real stack; the detector-version variable on the Detections and Match dashboards defaults to the newest version.
 
 ## Open items
 
@@ -100,4 +100,4 @@ Residual analysis after the Doppler correction (58 matched open-water ships): th
 3. **Re-processing:** done (2026-10-18). The raster is kept `retention.raster_days` (14) after the last stage; `detect` runs again on `detected`/`validated` Scenes while it exists (new Job per `detector.version`, old versions' Detections stay), `fetch` runs again once it is gone. Then `validate` again.
 4. **Docs:** done (ADR-0004, ADR-0001, PLAN amended 2026-10-18).
 5. **Cleanup:** done except flakiness: one schemathesis subtest failed once in a full-suite run and did not reproduce in 5 reruns (watch for it). AIS parsing now lives only in `algorithms/ais_dma.py` (`adapters/dma.py` downloads and unzips, then calls it); static vessel data goes to `ais_vessels`.
-6. **Not done:** per-Detection row time for validation (now second order, about 40 m for a 15 kn ship); Grafana panels checked against real data; alert rules are unit-tested (`make check-alerts`, CI job `alerts`), four exist (no Scene, AIS lag, failed Scene, failing Jobs).
+6. **Not done:** per-Detection row time for validation (now second order, about 40 m for a 15 kn ship); alert rules are unit-tested (`make check-alerts`, CI job `alerts`), four exist (no Scene, AIS lag, failed Scene, failing Jobs).
