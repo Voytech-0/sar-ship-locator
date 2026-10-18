@@ -14,12 +14,15 @@ detector:
   name: ca-cfar
   # v1: pfa 1e-6, min 3 px. v2 (chosen on three real scenes, see AGENTS.md): keeps 47 of 50 AIS-matched ships
   # and cuts unmatched open-water Detections by about 76 percent.
-  version: "2"
+  # v3: v2 plus length_bias_m 20 (the cluster extent includes the point spread; against AIS length the raw
+  # median absolute error fell from 22 to 15 m on 59 matched ships).
+  version: "3"
   params:
     guard_cells: 8
     background_cells: 24
     pfa: 1.0e-10
     min_cluster_pixels: 6
+    length_bias_m: 20
 land_mask:
   near_shore_m: 300
   exclusion_m: 100 # ignore everything within 100 m of land (quays, piers, moored boats)

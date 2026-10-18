@@ -399,10 +399,11 @@ def list_ais_positions(conn: Conn, start: datetime, end: datetime) -> list[Row]:
 
 
 def list_detection_points(conn: Conn, scene_id: str) -> list[Row]:
-    """Every Detection of a Scene (all Detector versions): `id`, `lon`, `lat`, `length_m`."""
+    """Every Detection of a Scene (all Detector versions): `id`, `lon`, `lat`, `length_m`, `detector_*`."""
     return conn.execute(
         """
-        SELECT id::text AS id, ST_X(geom) AS lon, ST_Y(geom) AS lat, length_m
+        SELECT id::text AS id, ST_X(geom) AS lon, ST_Y(geom) AS lat, length_m,
+               detector_name, detector_version
         FROM detections WHERE scene_id = %s ORDER BY created_at, id
         """,
         (scene_id,),

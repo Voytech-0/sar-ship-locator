@@ -22,7 +22,7 @@ Automated pipeline: Sentinel-1 GRD scenes of the Great Belt are ingested daily, 
 
 Everything runs: `docker compose up -d --build --wait` starts the whole system (PostGIS, migrations, SeaweedFS object store, land polygon init job, pipeline-api, Prometheus, Grafana, Airflow) in about 30 s once the land file exists. The first real run through Airflow ingested real Sentinel-1 scenes end to end. CI has jobs for Python (lint, mypy, tests incl. Docker), schema, `dags/`, and a compose config and image build.
 
-Gate: `make ci` (ruff, strict mypy, about 369 tests, Docker needed); `dags/` is its own uv project (`cd dags && uv sync && uv run pytest`, 43 tests).
+Gate: `make ci` (ruff, strict mypy, about 370 tests, Docker needed); `dags/` is its own uv project (`cd dags && uv sync && uv run pytest`, 43 tests).
 
 ## How the pieces fit
 
@@ -44,6 +44,8 @@ First real run, 14 Oct scene (CA-CFAR v1, pfa 1e-6, min 3 px): 474 Detections, 9
 Offline experiments (3 scenes, 12/13/14 Oct, real land): the edge-contrast idea did not separate matched from unmatched (median 1.34 vs 1.30) and was dropped. What worked: (a) a structures mask: OSM bridges, wind turbines and offshore platforms added to the land file as buffered polygons (80/75/100 m), unmatched 461 to 338 with no matched ship lost; (b) stricter detector settings: v2 = pfa 1e-10 and min 6 px keeps 47 of 50 matched ships and gives unmatched 109 with the structures mask (a 76 percent cut vs 461). Grid in the table of the experiment: pfa 1e-8..1e-12 x min 4..10 px; 1e-10/6 is the chosen knee (3 scenes only, so treat it as a starting point, not a tuned result).
 
 Re-run on a fresh stack with v2 and the structures mask: 14 Oct scene 474 to 157 Detections, 77 to 7 unmatched open-water; the `dark_ship_candidates` view (unmatched, open water, length 100 m or more, confidence 0.9 or more) lists 6 targets, all from the 12 Oct scene, matching the ship-like chips found by eye. A candidate is not proof (small vessels, AIS gaps, clutter remain possible).
+
+Detector v3 (2026-10-18): v2 plus `length_bias_m` 20. The cluster extent includes the sensor's point spread; against the AIS length of 59 matched ships the v2 median absolute error was 22 m (SAR/AIS ratio 1.19), v3 15 m (ratio 0.99). Fitted on those 59 ships with one constant (the quadrature form gave the same 15 m), so treat 20 m as a starting point. `dark_ship_candidates`: 4 for both versions. `validate` now validates each detector version on its own (before, an AIS track could be claimed by only one version's Detection, which halved the matches of a re-detected Scene). Site export shows the Scene's newest detector version; the match dashboard's version variable defaults to the newest.
 
 Detector `version` now labels a parameter set and comes from the Region config (`detector.version`, currently "2"); bump it when parameters change.
 

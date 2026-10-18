@@ -57,15 +57,10 @@
           "type": "grafana-postgresql-datasource",
           "uid": "postgis"
         },
-        "query": "SELECT v FROM (SELECT 'All' AS v UNION SELECT DISTINCT detector_version FROM detections) t ORDER BY (v <> 'All'), v",
+        "query": "SELECT v FROM (SELECT 'All' AS v UNION SELECT DISTINCT detector_version FROM detections) t ORDER BY (v = 'All'), v DESC",
         "refresh": 1,
         "includeAll": false,
         "multi": false,
-        "current": {
-          "selected": true,
-          "text": "All",
-          "value": "All"
-        },
         "options": []
       }
     ]

@@ -241,18 +241,21 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
             dets = db.list_detection_points(conn, request.scene_id)
             positions = db.list_ais_positions(conn, when - margin, when + margin)
             stored = db.get_scene_geometry(conn, request.scene_id)
-        results = services.validator.validate(
-            [DetectionRef(d["id"], (d["lon"], d["lat"]), d["length_m"]) for d in dets],
-            [
-                AisPosition(
-                    p["mmsi"], p["ts"], (p["lon"], p["lat"]), p["sog_knots"], p["cog_deg"], p["heading"]
-                )
-                for p in positions
-            ],
-            when,
-            cfg.validation.gate_m,
-            SarGeometry(**stored) if stored else None,
-        )
+        ais = [
+            AisPosition(p["mmsi"], p["ts"], (p["lon"], p["lat"]), p["sog_knots"], p["cog_deg"], p["heading"])
+            for p in positions
+        ]
+        geometry = SarGeometry(**stored) if stored else None
+        by_detector: dict[tuple[str, str], list[DetectionRef]] = {}
+        for d in dets:  # one AIS track explains one Detection per Detector version, not across versions
+            by_detector.setdefault((d["detector_name"], d["detector_version"]), []).append(
+                DetectionRef(d["id"], (d["lon"], d["lat"]), d["length_m"])
+            )
+        results = [
+            r
+            for refs in by_detector.values()
+            for r in services.validator.validate(refs, ais, when, cfg.validation.gate_m, geometry)
+        ]
         counts = {"matched": 0, "unmatched": 0, "ambiguous": 0}
         with ctx.db.connection() as conn:
             for r in results:

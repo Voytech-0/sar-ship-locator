@@ -709,12 +709,11 @@ def matches() -> dict[str, Any]:
                 "datasource": PG,
                 "query": (
                     "SELECT v FROM (SELECT 'All' AS v"
-                    " UNION SELECT DISTINCT detector_version FROM detections) t ORDER BY (v <> 'All'), v"
+                    " UNION SELECT DISTINCT detector_version FROM detections) t ORDER BY (v = 'All'), v DESC"
                 ),
                 "refresh": 1,
                 "includeAll": False,
                 "multi": False,
-                "current": {"selected": True, "text": "All", "value": "All"},
                 "options": [],
             },
         ],

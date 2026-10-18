@@ -52,6 +52,7 @@ class CaCfarDetector:
         enl: float = 4.4,
         merge_distance_px: int = 2,
         min_valid_fraction: float = 0.25,
+        length_bias_m: float = 0.0,
         chunk_rows: int = 1024,
         max_hits: int = 2_000_000,
         version: str = "1",
@@ -69,6 +70,9 @@ class CaCfarDetector:
         self.enl = enl
         self.merge_distance_px = merge_distance_px
         self.min_valid_fraction = min_valid_fraction
+        if length_bias_m < 0:
+            raise ValueError("length_bias_m must be >= 0")
+        self.length_bias_m = length_bias_m
         self.chunk_rows = chunk_rows
         self.max_hits = max_hits
         self._half_in = guard_cells
@@ -89,6 +93,7 @@ class CaCfarDetector:
             "enl": float,
             "merge_distance_px": int,
             "min_valid_fraction": float,
+            "length_bias_m": float,
             "version": str,
         }
         unknown = set(params) - set(known)
@@ -211,7 +216,9 @@ class CaCfarDetector:
         sxy = np.bincount(labels, weights=e_c * n_c, minlength=k) / fcounts
         lam = (sxx + syy) / 2 + np.sqrt(((sxx - syy) / 2) ** 2 + sxy**2)
         pixel_m = float(np.sqrt(abs(np.linalg.det(m))))
-        length = np.sqrt(12 * lam + pixel_m**2)
+        # The extent of a cluster includes the sensor's point spread: against AIS lengths of 59 matched ships
+        # the raw estimate is about 20 m too long, so `length_bias_m` is subtracted (never below one pixel).
+        length = np.maximum(np.sqrt(12 * lam + pixel_m**2) - self.length_bias_m, pixel_m)
 
         confidence = np.clip(1.0 - self.threshold / peak, 0.0, 1.0)
         if raster.geolocate is not None:  # accurate GCP mapping; takes pixel-centre indices

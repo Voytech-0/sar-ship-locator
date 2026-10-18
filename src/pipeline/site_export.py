@@ -52,9 +52,11 @@ def export_scene(database: Database, store: ObjectStore, scene_id: str, out: Pat
                    d.shore::text AS shore, d.chip_key, v.label::text AS label, v.matched_mmsi,
                    v.match_distance_m
             FROM detections d LEFT JOIN validations v ON v.detection_id = d.id
-            WHERE d.scene_id = %s ORDER BY d.id
+            WHERE d.scene_id = %s AND d.detector_version = (
+                SELECT detector_version FROM detections WHERE scene_id = %s ORDER BY created_at DESC LIMIT 1)
+            ORDER BY d.id
             """,
-            (scene_id,),
+            (scene_id, scene_id),
         ).fetchall()
         margin = timedelta(minutes=TRACK_MINUTES)
         raw = db.list_ais_positions(conn, when - margin, when + margin)

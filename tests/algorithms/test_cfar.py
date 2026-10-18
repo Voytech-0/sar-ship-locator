@@ -92,6 +92,19 @@ def test_candidate_attributes(detector: CaCfarDetector) -> None:
     assert 120 < det.length_m < 260
 
 
+def test_length_bias_is_subtracted_but_never_below_one_pixel() -> None:
+    img = speckled_sea((400, 400), seed=2)
+    add_ships(img, [Ship(200, 150, 4, 24)])
+    (plain,) = CaCfarDetector().detect(make_raster(img))
+    (biased,) = CaCfarDetector(length_bias_m=20).detect(make_raster(img))
+    assert plain.length_m is not None and biased.length_m is not None
+    assert biased.length_m == pytest.approx(plain.length_m - 20, abs=1e-6)
+    (tiny,) = CaCfarDetector(length_bias_m=10_000).detect(make_raster(img))
+    assert tiny.length_m is not None and 5 < tiny.length_m < 15  # one pixel
+    with pytest.raises(ValueError, match="length_bias_m"):
+        CaCfarDetector(length_bias_m=-1)
+
+
 def test_brighter_ship_has_higher_confidence(detector: CaCfarDetector) -> None:
     img = speckled_sea((300, 300), seed=3)
     add_ships(img, [Ship(100, 50, 5, 5, gain=25.0), Ship(100, 200, 5, 5, gain=400.0)])
