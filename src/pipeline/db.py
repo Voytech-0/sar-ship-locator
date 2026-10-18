@@ -333,6 +333,33 @@ def insert_ais_positions(conn: Conn, positions: Sequence[Row]) -> int:
     return cur.rowcount
 
 
+def upsert_ais_vessels(conn: Conn, vessels: Sequence[Row]) -> None:
+    """Static vessel data (`mmsi` plus optional name, ship_type, length_m, width_m); non-empty values win."""
+    if not vessels:
+        return
+    conn.cursor().executemany(
+        """
+        INSERT INTO ais_vessels (mmsi, name, ship_type, length_m, width_m) VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (mmsi) DO UPDATE SET
+            name = COALESCE(EXCLUDED.name, ais_vessels.name),
+            ship_type = COALESCE(EXCLUDED.ship_type, ais_vessels.ship_type),
+            length_m = COALESCE(EXCLUDED.length_m, ais_vessels.length_m),
+            width_m = COALESCE(EXCLUDED.width_m, ais_vessels.width_m)
+        """,
+        [
+            (v["mmsi"], v.get("name"), v.get("ship_type"), v.get("length_m"), v.get("width_m"))
+            for v in vessels
+        ],
+    )
+
+
+def list_ais_vessels(conn: Conn, mmsis: Sequence[int]) -> list[Row]:
+    return conn.execute(
+        "SELECT mmsi, name, ship_type, length_m, width_m FROM ais_vessels WHERE mmsi = ANY(%s)",
+        (list(mmsis),),
+    ).fetchall()
+
+
 def list_ais_positions(conn: Conn, start: datetime, end: datetime) -> list[Row]:
     """AIS Positions with `start <= ts <= end`: mmsi, ts, lon, lat, sog_knots, cog_deg, heading."""
     return conn.execute(

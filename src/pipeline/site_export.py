@@ -58,6 +58,7 @@ def export_scene(database: Database, store: ObjectStore, scene_id: str, out: Pat
         ).fetchall()
         margin = timedelta(minutes=TRACK_MINUTES)
         raw = db.list_ais_positions(conn, when - margin, when + margin)
+        static = {v["mmsi"]: v for v in db.list_ais_vessels(conn, sorted({p["mmsi"] for p in raw}))}
 
     scene_dir = out / scene_id
     (scene_dir / "chips").mkdir(parents=True, exist_ok=True)
@@ -91,7 +92,20 @@ def export_scene(database: Database, store: ObjectStore, scene_id: str, out: Pat
         own = [p for p in positions if p.mmsi == mmsi]
         track = [[p.position[0], p.position[1], round((p.ts - when).total_seconds())] for p in own]
         sog = next((p.sog_knots for p in own if p.sog_knots is not None), None)
-        vessels.append({"mmsi": mmsi, "lon": lon, "lat": lat, "sog_knots": sog, "track": track})
+        info = static.get(mmsi, {})
+        vessels.append(
+            {
+                "mmsi": mmsi,
+                "lon": lon,
+                "lat": lat,
+                "sog_knots": sog,
+                "name": info.get("name"),
+                "ship_type": info.get("ship_type"),
+                "length_m": info.get("length_m"),
+                "width_m": info.get("width_m"),
+                "track": track,
+            }
+        )
 
     doc = {
         "scene_id": scene_id,

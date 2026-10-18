@@ -22,7 +22,7 @@ Automated pipeline: Sentinel-1 GRD scenes of the Great Belt are ingested daily, 
 
 Everything runs: `docker compose up -d --build --wait` starts the whole system (PostGIS, migrations, SeaweedFS object store, land polygon init job, pipeline-api, Prometheus, Grafana, Airflow) in about 30 s once the land file exists. The first real run through Airflow ingested real Sentinel-1 scenes end to end. CI has jobs for Python (lint, mypy, tests incl. Docker), schema, `dags/`, and a compose config and image build.
 
-Gate: `make ci` (ruff, strict mypy, about 315 tests, Docker needed); `dags/` is its own uv project (`cd dags && uv sync && uv run pytest`, 39 tests).
+Gate: `make ci` (ruff, strict mypy, about 354 tests, Docker needed); `dags/` is its own uv project (`cd dags && uv sync && uv run pytest`, 43 tests).
 
 ## How the pieces fit
 
@@ -90,5 +90,5 @@ Grafana has a third dashboard, Match analysis (`sar-matches`): outcome counts, m
 2. **Detection quality, next steps:** the 90 unmatched open-water Detections in the 12 Oct scene deserve a look (a large rough-sea or wind-shadow area?); GO-CFAR or a texture test for sea-state edges; thresholds of `dark_ship_candidates` are a starting point; add the candidates to a Grafana panel; the ML dataset export exists (below); train a first classifier on it.
 3. **Re-processing:** a `detect` cannot be re-run on a `detected` Scene via the API, and the raster is deleted after detect, so changing the detector means re-fetching (ADR-0003 vs API; deferred until the ML layer exists). Local dev: wipe the volumes (`docker volume rm sar_pg-data sar_store-data`).
 4. **Docs:** amend ADR-0004 (IFD at end, little-endian) and PLAN/ADR-0001 (triggerer container; PLAN still mentions MinIO/vv.tif in places).
-5. **Cleanup:** AIS CSV parsing is duplicated in `adapters/dma.py` and `algorithms/ais_dma.py`; unify. Remove merged worktrees under `.claude/worktrees/` and merged stream branches. `scripts/check_schema.sh` still uses the amd64-only `postgis/postgis:16-3.4`. One schemathesis subtest failed once in a full-suite run and did not reproduce in 5 reruns (watch for flakiness).
+5. **Cleanup:** AIS CSV parsing is duplicated in `adapters/dma.py` and `algorithms/ais_dma.py`; unify. Remove merged worktrees under `.claude/worktrees/` and merged stream branches. `scripts/check_schema.sh` uses the arm64-capable `deploy/postgis` image. One schemathesis subtest failed once in a full-suite run and did not reproduce in 5 reruns (watch for flakiness).
 6. **Not done:** per-Detection acquisition time for validation (match distance grows with vessel speed, so this is the likely biggest accuracy gain); Grafana panels checked against real data; alerting beyond the two rules.

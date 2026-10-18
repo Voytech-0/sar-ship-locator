@@ -67,7 +67,7 @@ const g = { det: L.layerGroup().addTo(map), ais: L.layerGroup().addTo(map), link
 let sar = null, scene = null, base = '';
 
 const isDark = d => d.label === 'unmatched' && d.shore === 'open_water' && d.length_m >= 100 && d.confidence >= 0.9;
-const fetchJson = async u => { const r = await fetch(u); if (!r.ok) throw new Error(u + ': ' + r.status); return r.json(); };
+const fetchJson = async u => { const r = await fetch(u, { cache: 'no-store' }); if (!r.ok) throw new Error(u + ': ' + r.status); return r.json(); };
 
 function visible(d) {
   const labels = [...document.querySelectorAll('.f-label:checked')].map(e => e.value);
@@ -76,8 +76,8 @@ function visible(d) {
     && d.confidence >= +$('f-conf').value;
 }
 
-function popup(d) {
-  const ais = d.matched_mmsi ? `<br>AIS ${d.matched_mmsi}, ${Math.round(d.match_distance_m)} m away` : '';
+function popup(d, v) {
+  const ais = d.matched_mmsi ? `<br>AIS ${v && v.name ? v.name : d.matched_mmsi}${v && v.length_m ? ', ' + Math.round(v.length_m) + ' m' : ''}, ${Math.round(d.match_distance_m)} m away` : '';
   const chip = d.chip ? `<img class="chip" src="${base}/${d.chip}" alt="chip">` : '';
   return `<b>${d.label || 'not validated'}</b>${isDark(d) ? ' · dark-ship candidate' : ''}<br>` +
     `${d.shore.replace('_', ' ')} · ${d.length_m ? Math.round(d.length_m) + ' m' : 'length ?'} · conf ${d.confidence.toFixed(2)}${ais}${chip}`;
@@ -91,7 +91,7 @@ function draw() {
   for (const d of shown) {
     L.circleMarker([d.lat, d.lon], { radius: isDark(d) ? 8 : 5, weight: isDark(d) ? 3 : 1,
       color: isDark(d) ? css('--dark') : '#000', fillColor: css(COLORS[d.label] || '--muted'), fillOpacity: .9 })
-      .bindPopup(popup(d)).addTo(g.det);
+      .bindPopup(popup(d, byMmsi[d.matched_mmsi])).addTo(g.det);
     const v = byMmsi[d.matched_mmsi];
     if (v) L.polyline([[d.lat, d.lon], [v.lat, v.lon]], { color: css('--matched'), weight: 2, dashArray: '4 3' }).addTo(g.links);
   }
@@ -99,7 +99,9 @@ function draw() {
     const t = v.track.map(p => [p[1], p[0]]);
     if (t.length > 1) L.polyline(t, { color: css('--ais'), weight: 1.5, opacity: .7 }).addTo(g.ais);
     L.circleMarker([v.lat, v.lon], { radius: 4, color: css('--ais'), fillColor: '#fff', fillOpacity: 1, weight: 2 })
-      .bindPopup(`AIS ${v.mmsi}<br>${v.sog_knots ?? '?'} kn at acquisition`).addTo(g.ais);
+      .bindPopup(`<b>${v.name || 'AIS ' + v.mmsi}</b>${v.name ? '<br>MMSI ' + v.mmsi : ''}` +
+        `<br>${v.length_m ? Math.round(v.length_m) + (v.width_m ? ' × ' + Math.round(v.width_m) : '') + ' m' : 'length ?'}` +
+        `${v.ship_type ? ' · ' + v.ship_type : ''}<br>${v.sog_knots ?? '?'} kn at acquisition`).addTo(g.ais);
   }
   const s = scene.stats, ow = s.open_water;
   $('stats').innerHTML = `${shown.length} of ${s.detections} Detections shown<br>Open water: ` +

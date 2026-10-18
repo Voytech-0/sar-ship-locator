@@ -5,7 +5,8 @@ cd "$(dirname "$0")/.."
 
 name="sar-schema-check-$$"
 trap 'docker rm -f "$name" >/dev/null 2>&1 || true' EXIT
-docker run -d --name "$name" -e POSTGRES_PASSWORD=x postgis/postgis:16-3.4 >/dev/null
+docker build -q -t sar-postgis:16 deploy/postgis >/dev/null
+docker run -d --name "$name" -e POSTGRES_PASSWORD=x sar-postgis:16 >/dev/null
 
 for _ in $(seq 60); do
   # pg_isready passes during the init-phase restart too; require a real query to succeed twice.

@@ -36,6 +36,12 @@ COLUMNS: dict[str, str] = {
     "cog": "COG",
     "heading": "Heading",
 }
+OPTIONAL_COLUMNS: dict[str, str] = {
+    "name": "Name",
+    "ship_type": "Ship type",
+    "length": "Length",
+    "width": "Width",
+}
 TIMESTAMP_FORMAT = "%d/%m/%Y %H:%M:%S"  # UTC
 VESSEL_TYPES = frozenset(
     {"class a", "class b"}
@@ -80,7 +86,7 @@ def iter_dma_positions(
         idx = _column_indices(header)
         i_lat, i_lon, i_ts, i_type = idx["lat"], idx["lon"], idx["timestamp"], idx["mobile_type"]
         i_mmsi = idx["mmsi"]
-        width = max(idx.values()) + 1
+        width = max(idx[f] for f in COLUMNS) + 1
 
         for row in reader:
             stats.rows_read += 1
@@ -121,6 +127,10 @@ def iter_dma_positions(
                 sog_knots=_optional(row[idx["sog"]], _SOG_NA),
                 cog_deg=_optional(row[idx["cog"]], _COG_NA),
                 heading=_heading(row[idx["heading"]]),
+                name=_static_text(row, idx, "name"),
+                ship_type=_static_text(row, idx, "ship_type"),
+                length_m=_static_size(row, idx, "length"),
+                width_m=_static_size(row, idx, "width"),
             )
 
 
@@ -129,7 +139,9 @@ def _column_indices(header: list[str]) -> dict[str, int]:
     missing = [col for col in COLUMNS.values() if col.lower() not in names]
     if missing:
         raise ValueError(f"DMA AIS header lacks columns: {missing}")
-    return {field: names[col.lower()] for field, col in COLUMNS.items()}
+    found = {field: names[col.lower()] for field, col in COLUMNS.items()}
+    found.update({f: names[c.lower()] for f, c in OPTIONAL_COLUMNS.items() if c.lower() in names})
+    return found
 
 
 def _optional(raw: str, not_available: float) -> float | None:
@@ -141,6 +153,16 @@ def _optional(raw: str, not_available: float) -> float | None:
     except ValueError:
         return None
     return None if value >= not_available else value
+
+
+def _static_text(row: list[str], idx: dict[str, int], field: str) -> str | None:
+    value = row[idx[field]].strip() if field in idx and idx[field] < len(row) else ""
+    return value if value and value.lower() not in ("undefined", "unknown") else None
+
+
+def _static_size(row: list[str], idx: dict[str, int], field: str) -> float | None:
+    value = _optional(row[idx[field]], float("inf")) if field in idx and idx[field] < len(row) else None
+    return value if value is not None and value > 0 else None
 
 
 def _heading(raw: str) -> int | None:

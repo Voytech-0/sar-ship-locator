@@ -87,6 +87,11 @@ class AisPosition:
     sog_knots: float | None = None
     cog_deg: float | None = None
     heading: int | None = None
+    # Static data, filled when the archive row has it.
+    name: str | None = None
+    ship_type: str | None = None
+    length_m: float | None = None
+    width_m: float | None = None
 
 
 @dataclass(frozen=True)

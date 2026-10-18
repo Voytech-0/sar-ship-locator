@@ -37,6 +37,8 @@ def test_scene_export(api: Api, store: S3ObjectStore, tmp_path: Path) -> None:  
     ]
     with api.db.connection() as conn:
         db.insert_ais_positions(conn, rows)
+        db.upsert_ais_vessels(conn, [{"mmsi": 219000001, "name": "TAURUS", "length_m": 183.0}])
+        db.upsert_ais_vessels(conn, [{"mmsi": 219000001, "ship_type": "Tanker"}])
 
     doc = export_scene(api.db, store, "S1_A", tmp_path)
 
@@ -46,6 +48,13 @@ def test_scene_export(api: Api, store: S3ObjectStore, tmp_path: Path) -> None:  
     assert len(with_chip) == 1 and (tmp_path / "S1_A" / with_chip[0]["chip"]).exists()
     assert [v["mmsi"] for v in doc["ais"]] == [219000001]
     assert len(doc["ais"][0]["track"]) == 2
+    vessel = doc["ais"][0]
+    assert (vessel["name"], vessel["ship_type"], vessel["length_m"], vessel["width_m"]) == (
+        "TAURUS",
+        "Tanker",
+        183.0,
+        None,
+    )
     assert doc["preview"]["bounds"] == [[55.0, 10.9], [55.5, 11.2]]
     assert (tmp_path / "S1_A" / "preview.png").exists()
     assert json.loads((tmp_path / "S1_A" / "scene.json").read_text())["scene_id"] == "S1_A"

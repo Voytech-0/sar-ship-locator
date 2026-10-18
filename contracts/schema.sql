@@ -80,6 +80,15 @@ CREATE TABLE ais_positions (
 CREATE INDEX ais_positions_ts_idx ON ais_positions (ts);
 CREATE INDEX ais_positions_geom_idx ON ais_positions USING gist (geom);
 
+-- Static vessel data from the AIS archive (one row per MMSI, newest non-empty values win).
+CREATE TABLE ais_vessels (
+    mmsi      bigint PRIMARY KEY,
+    name      text,
+    ship_type text,
+    length_m  real CHECK (length_m > 0),
+    width_m   real CHECK (width_m > 0)
+);
+
 -- UTC days of AIS fully loaded for a Region. Drives `ais_ready` on GET /scenes.
 CREATE TABLE ais_loaded_days (
     region_id text NOT NULL REFERENCES regions,

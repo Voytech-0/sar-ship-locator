@@ -179,6 +179,7 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
         cfg = ctx.config.regions[request.region_id]
         loaded = 0
         batch: list[dict[str, Any]] = []
+        vessels: dict[int, dict[str, Any]] = {}
         with _source("dma"), ctx.db.connection() as conn:
             for p in services.ais_source.positions(request.date, to_region(cfg)):  # errors counted below
                 batch.append(
@@ -192,10 +193,19 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
                         "heading": p.heading,
                     }
                 )
+                if p.name or p.ship_type or p.length_m or p.width_m:
+                    vessels[p.mmsi] = {
+                        "mmsi": p.mmsi,
+                        "name": p.name,
+                        "ship_type": p.ship_type,
+                        "length_m": p.length_m,
+                        "width_m": p.width_m,
+                    }
                 if len(batch) >= AIS_BATCH:
                     loaded += db.insert_ais_positions(conn, batch)
                     batch = []
             loaded += db.insert_ais_positions(conn, batch)
+            db.upsert_ais_vessels(conn, list(vessels.values()))
         metrics.ais_positions_loaded(cfg.region_id, loaded)
         return AisLoadResult(positions_loaded=loaded)
 
