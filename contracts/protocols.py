@@ -112,6 +112,11 @@ class AisPosition:
     ship_type: str | None = None
     length_m: float | None = None
     width_m: float | None = None
+    # Antenna position on the hull: metres to the bow, stern, port and starboard side (AIS A, B, C, D).
+    to_bow_m: float | None = None
+    to_stern_m: float | None = None
+    to_port_m: float | None = None
+    to_starboard_m: float | None = None
 
 
 @dataclass(frozen=True)

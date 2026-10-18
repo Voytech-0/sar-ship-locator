@@ -39,7 +39,9 @@ def test_scene_export(api: Api, store: S3ObjectStore, tmp_path: Path) -> None:  
     with api.db.connection() as conn:
         db.insert_ais_positions(conn, rows)
         db.upsert_ais_vessels(conn, [{"mmsi": 219000001, "name": "TAURUS", "length_m": 183.0}])
-        db.upsert_ais_vessels(conn, [{"mmsi": 219000001, "ship_type": "Tanker"}])
+        db.upsert_ais_vessels(
+            conn, [{"mmsi": 219000001, "ship_type": "Tanker", "to_bow_m": 147.0, "to_stern_m": 36.0}]
+        )
 
     doc = export_scene(api.db, store, "S1_A", tmp_path)
 

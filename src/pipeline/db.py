@@ -360,30 +360,34 @@ def insert_ais_positions(conn: Conn, positions: Sequence[Row]) -> int:
     return cur.rowcount
 
 
+VESSEL_FIELDS = (
+    "name",
+    "ship_type",
+    "length_m",
+    "width_m",
+    "to_bow_m",
+    "to_stern_m",
+    "to_port_m",
+    "to_starboard_m",
+)
+
+
 def upsert_ais_vessels(conn: Conn, vessels: Sequence[Row]) -> None:
-    """Static vessel data (`mmsi` plus optional name, ship_type, length_m, width_m); non-empty values win."""
+    """Static vessel data (`mmsi` plus the optional `VESSEL_FIELDS`); non-empty values win."""
     if not vessels:
         return
+    columns = ", ".join(("mmsi", *VESSEL_FIELDS))
+    marks = ", ".join(["%s"] * (len(VESSEL_FIELDS) + 1))
+    updates = ", ".join(f"{f} = COALESCE(EXCLUDED.{f}, ais_vessels.{f})" for f in VESSEL_FIELDS)
     conn.cursor().executemany(
-        """
-        INSERT INTO ais_vessels (mmsi, name, ship_type, length_m, width_m) VALUES (%s, %s, %s, %s, %s)
-        ON CONFLICT (mmsi) DO UPDATE SET
-            name = COALESCE(EXCLUDED.name, ais_vessels.name),
-            ship_type = COALESCE(EXCLUDED.ship_type, ais_vessels.ship_type),
-            length_m = COALESCE(EXCLUDED.length_m, ais_vessels.length_m),
-            width_m = COALESCE(EXCLUDED.width_m, ais_vessels.width_m)
-        """,
-        [
-            (v["mmsi"], v.get("name"), v.get("ship_type"), v.get("length_m"), v.get("width_m"))
-            for v in vessels
-        ],
+        f"INSERT INTO ais_vessels ({columns}) VALUES ({marks}) ON CONFLICT (mmsi) DO UPDATE SET {updates}",
+        [(v["mmsi"], *(v.get(f) for f in VESSEL_FIELDS)) for v in vessels],
     )
 
 
 def list_ais_vessels(conn: Conn, mmsis: Sequence[int]) -> list[Row]:
     return conn.execute(
-        "SELECT mmsi, name, ship_type, length_m, width_m FROM ais_vessels WHERE mmsi = ANY(%s)",
-        (list(mmsis),),
+        f"SELECT mmsi, {', '.join(VESSEL_FIELDS)} FROM ais_vessels WHERE mmsi = ANY(%s)", (list(mmsis),)
     ).fetchall()
 
 

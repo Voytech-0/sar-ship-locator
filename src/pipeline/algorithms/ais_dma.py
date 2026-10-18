@@ -41,6 +41,10 @@ OPTIONAL_COLUMNS: dict[str, str] = {
     "ship_type": "Ship type",
     "length": "Length",
     "width": "Width",
+    "to_bow": "A",
+    "to_stern": "B",
+    "to_port": "C",
+    "to_starboard": "D",
 }
 TIMESTAMP_FORMAT = "%d/%m/%Y %H:%M:%S"  # UTC
 VESSEL_TYPES = frozenset(
@@ -137,6 +141,10 @@ def iter_dma_positions(
                 ship_type=_static_text(row, idx, "ship_type"),
                 length_m=_static_size(row, idx, "length"),
                 width_m=_static_size(row, idx, "width"),
+                to_bow_m=_static_size(row, idx, "to_bow"),
+                to_stern_m=_static_size(row, idx, "to_stern"),
+                to_port_m=_static_size(row, idx, "to_port"),
+                to_starboard_m=_static_size(row, idx, "to_starboard"),
             )
 
 

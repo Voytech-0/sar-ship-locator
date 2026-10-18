@@ -215,14 +215,9 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
                         "heading": p.heading,
                     }
                 )
-                if p.name or p.ship_type or p.length_m or p.width_m:
-                    vessels[p.mmsi] = {
-                        "mmsi": p.mmsi,
-                        "name": p.name,
-                        "ship_type": p.ship_type,
-                        "length_m": p.length_m,
-                        "width_m": p.width_m,
-                    }
+                static = {f: getattr(p, f) for f in db.VESSEL_FIELDS}
+                if any(static.values()):
+                    vessels[p.mmsi] = {"mmsi": p.mmsi, **static}
                 if len(batch) >= AIS_BATCH:
                     loaded += db.insert_ais_positions(conn, batch)
                     batch = []

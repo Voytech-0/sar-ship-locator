@@ -87,7 +87,12 @@ CREATE TABLE ais_vessels (
     name      text,
     ship_type text,
     length_m  real CHECK (length_m > 0),
-    width_m   real CHECK (width_m > 0)
+    width_m   real CHECK (width_m > 0),
+    -- Antenna position on the hull (AIS A, B, C, D): metres to the bow, stern, port side and starboard side.
+    to_bow_m       real CHECK (to_bow_m >= 0),
+    to_stern_m     real CHECK (to_stern_m >= 0),
+    to_port_m      real CHECK (to_port_m >= 0),
+    to_starboard_m real CHECK (to_starboard_m >= 0)
 );
 
 -- UTC days of AIS fully loaded for a Region. Drives `ais_ready` on GET /scenes.

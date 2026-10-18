@@ -160,6 +160,8 @@ def test_static_vessel_fields_are_parsed() -> None:
     )
     [p], _ = parse(csv_text(line))
     assert (p.name, p.ship_type, p.length_m, p.width_m) == ("TAURUS", "Tanker", 183.0, 32.0)
+    # antenna 147 m from the bow, 36 m from the stern, 22 m from port, 10 m from starboard
+    assert (p.to_bow_m, p.to_stern_m, p.to_port_m, p.to_starboard_m) == (147.0, 36.0, 22.0, 10.0)
 
 
 def test_missing_static_fields_are_none() -> None:
