@@ -112,7 +112,7 @@ def test_length_bias_is_subtracted_but_never_below_one_pixel() -> None:
 def test_region_config_sets_the_floors() -> None:
     cfg = yaml.safe_load(REGION_CONFIG.read_text())["detector"]
     d = CaCfarDetector.from_params({**cfg["params"], "version": cfg["version"]})
-    assert (d.min_length_m, d.min_confidence, d.min_vh_contrast_db) == (30.0, 0.7, 12.0)
+    assert (d.min_length_m, d.min_confidence, d.min_vh_contrast_db) == (30.0, 0.7, 24.0)
 
 
 def test_min_length_and_min_confidence_drop_weak_short_clusters() -> None:
