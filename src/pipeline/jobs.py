@@ -95,7 +95,8 @@ def submit_job(database: Database, config: AppConfig, stage: Stage, request: Bas
     stage and input wins (so a retried submit never gets a 409 from its own earlier success), then the 409
     status check, then a new Job.
     """
-    input_ = request.model_dump(mode="json", exclude_none=True)
+    input_ = request.model_dump(mode="json", exclude_none=True, exclude={"force"})
+    force: bool = getattr(request, "force", False)
     if not all(db.storable(v) for v in _strings(input_)):
         # Valid per the schema (plain strings) but can never match anything we store, so: unknown.
         raise NotFoundError("request refers to an identifier containing characters that cannot exist")
@@ -116,6 +117,13 @@ def submit_job(database: Database, config: AppConfig, stage: Stage, request: Bas
                 request = DetectRequest(
                     scene_id=scene_id, detector=DetectorRef(name=det.name, version=det.version)
                 )
+        if force:
+            # Another run of an already seen input: the counter makes it a different (stage, input), so the
+            # unique index lets it through; a queued or running Job for the input is still returned.
+            existing = db.find_live_rerun(conn, stage.value, input_)
+            if existing is not None:
+                return job_from_row(existing), False
+            input_ = {**input_, "rerun": db.count_jobs_for_input(conn, stage.value, input_)}
         existing = db.find_live_job(conn, stage.value, input_)
         if existing is not None:
             return job_from_row(existing), False
@@ -235,7 +243,9 @@ class JobRunner:
         stage = Stage(job["stage"])
         started = time.monotonic()
         try:
-            request = REQUEST_MODELS[stage].model_validate(job["input"])
+            request = REQUEST_MODELS[stage].model_validate(
+                {k: v for k, v in job["input"].items() if k != "rerun"}
+            )
             scene_id: str | None = getattr(request, "scene_id", None)
             if scene_id is not None and stage in SCENE_STEPS:
                 with self._db.connection() as conn:

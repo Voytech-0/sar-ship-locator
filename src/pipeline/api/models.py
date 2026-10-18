@@ -76,6 +76,7 @@ class DiscoverRequest(Strict):
 
 class SceneStageRequest(Strict):
     scene_id: str
+    force: bool = False  # run again although an identical Job succeeded; not part of the Job input
 
 
 class DetectorRef(Strict):
@@ -86,6 +87,7 @@ class DetectorRef(Strict):
 class DetectRequest(Strict):
     scene_id: str
     detector: DetectorRef | None = None
+    force: bool = False
 
 
 class AisLoadRequest(Strict):

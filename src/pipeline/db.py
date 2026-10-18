@@ -470,6 +470,25 @@ def find_live_job(conn: Conn, stage: str, input_: Row) -> Row | None:
     ).fetchone()
 
 
+def count_jobs_for_input(conn: Conn, stage: str, base_input: Row) -> int:
+    """Jobs of any status for this stage and input, ignoring a `rerun` counter."""
+    row = conn.execute(
+        "SELECT count(*) AS n FROM jobs WHERE stage = %s::stage AND input - 'rerun' = %s",
+        (stage, Jsonb(base_input)),
+    ).fetchone()
+    assert row is not None
+    return int(row["n"])
+
+
+def find_live_rerun(conn: Conn, stage: str, base_input: Row) -> Row | None:
+    """A queued or running Job for this stage and input, whatever its `rerun` counter."""
+    return conn.execute(
+        f"SELECT {JOB_COLUMNS} FROM jobs WHERE stage = %s::stage AND input - 'rerun' = %s"
+        " AND status::text IN ('queued', 'running') ORDER BY created_at LIMIT 1",
+        (stage, Jsonb(base_input)),
+    ).fetchone()
+
+
 def insert_job(conn: Conn, stage: str, input_: Row) -> tuple[Row, bool]:
     """Create a queued Job unless a live one exists for the same (stage, input). Returns (job, created).
 
