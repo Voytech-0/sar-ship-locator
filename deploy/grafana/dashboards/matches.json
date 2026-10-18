@@ -1,0 +1,719 @@
+{
+  "uid": "sar-matches",
+  "title": "Match analysis",
+  "tags": [
+    "sar-ship-locator"
+  ],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "templating": {
+    "list": [
+      {
+        "type": "constant",
+        "name": "api_url",
+        "query": "http://localhost:8000",
+        "hide": 2
+      },
+      {
+        "type": "custom",
+        "name": "shore",
+        "label": "Shore",
+        "query": "All,open_water,near_shore",
+        "options": [
+          {
+            "text": "All",
+            "value": "All",
+            "selected": false
+          },
+          {
+            "text": "open_water",
+            "value": "open_water",
+            "selected": true
+          },
+          {
+            "text": "near_shore",
+            "value": "near_shore",
+            "selected": false
+          }
+        ],
+        "current": {
+          "text": "open_water",
+          "value": "open_water",
+          "selected": true
+        }
+      },
+      {
+        "type": "query",
+        "name": "detector",
+        "label": "Detector version",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "postgis"
+        },
+        "query": "SELECT v FROM (SELECT 'All' AS v UNION SELECT DISTINCT detector_version FROM detections) t ORDER BY (v <> 'All'), v",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "All"
+        },
+        "options": []
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Outcomes",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgis"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 10,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgis"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) FILTER (WHERE v.label = 'matched') AS matched,\n       count(*) FILTER (WHERE v.label = 'unmatched') AS unmatched,\n       count(*) FILTER (WHERE v.label = 'ambiguous') AS ambiguous\nFROM validations v\nJOIN detections d ON d.id = v.detection_id\nJOIN scenes s ON s.scene_id = d.scene_id\nWHERE $__timeFilter(s.acquired_at)\n  AND ('$shore' = 'All' OR d.shore::text = '$shore')\n  AND ('$detector' = 'All' OR d.detector_version = '$detector')"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Match quality",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgis"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 0,
+        "w": 14,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "match_rate_pct"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "median_distance_m"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthm"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p90_distance_m"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthm"
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgis"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT 100.0 * count(*) FILTER (WHERE v.label = 'matched') / NULLIF(count(*), 0) AS match_rate_pct,\n       percentile_cont(0.5) WITHIN GROUP (ORDER BY v.match_distance_m) AS median_distance_m,\n       percentile_cont(0.9) WITHIN GROUP (ORDER BY v.match_distance_m) AS p90_distance_m\nFROM validations v\nJOIN detections d ON d.id = v.detection_id\nJOIN scenes s ON s.scene_id = d.scene_id\nWHERE $__timeFilter(s.acquired_at)\n  AND ('$shore' = 'All' OR d.shore::text = '$shore')\n  AND ('$detector' = 'All' OR d.detector_version = '$detector')"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "How far the AIS vessel is from the Detection (matched, 50 m buckets)",
+      "type": "barchart",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgis"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 8,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgis"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT b::text || '-' || (b + 50)::text AS distance_m, count(*) AS matches\nFROM (SELECT LEAST(FLOOR(v.match_distance_m / 50), 9)::int * 50 AS b\n  FROM validations v\nJOIN detections d ON d.id = v.detection_id\nJOIN scenes s ON s.scene_id = d.scene_id\nWHERE $__timeFilter(s.acquired_at)\n  AND ('$shore' = 'All' OR d.shore::text = '$shore')\n  AND ('$detector' = 'All' OR d.detector_version = '$detector')\n  AND v.label = 'matched') t\nGROUP BY b ORDER BY b"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        },
+        "xField": "distance_m"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Outcome by Detection length (300 = 300 m or longer)",
+      "type": "barchart",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgis"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 4,
+        "w": 8,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgis"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT LEAST(FLOOR(COALESCE(d.length_m, 0) / 50), 6)::int * 50 AS length_from_m,\n       count(*) FILTER (WHERE v.label = 'matched') AS matched,\n       count(*) FILTER (WHERE v.label = 'unmatched') AS unmatched,\n       count(*) FILTER (WHERE v.label = 'ambiguous') AS ambiguous\nFROM validations v\nJOIN detections d ON d.id = v.detection_id\nJOIN scenes s ON s.scene_id = d.scene_id\nWHERE $__timeFilter(s.acquired_at)\n  AND ('$shore' = 'All' OR d.shore::text = '$shore')\n  AND ('$detector' = 'All' OR d.detector_version = '$detector')\nGROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        },
+        "stacking": "normal",
+        "xField": "length_from_m"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Outcome by confidence (0.9 = 0.9 to 1.0)",
+      "type": "barchart",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgis"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 4,
+        "w": 8,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgis"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT LEAST(FLOOR(d.confidence * 10), 9)::int / 10.0 AS confidence_from,\n       count(*) FILTER (WHERE v.label = 'matched') AS matched,\n       count(*) FILTER (WHERE v.label = 'unmatched') AS unmatched,\n       count(*) FILTER (WHERE v.label = 'ambiguous') AS ambiguous\nFROM validations v\nJOIN detections d ON d.id = v.detection_id\nJOIN scenes s ON s.scene_id = d.scene_id\nWHERE $__timeFilter(s.acquired_at)\n  AND ('$shore' = 'All' OR d.shore::text = '$shore')\n  AND ('$detector' = 'All' OR d.detector_version = '$detector')\nGROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        },
+        "stacking": "normal",
+        "xField": "confidence_from"
+      }
+    },
+    {
+      "id": 6,
+      "title": "Median match distance by vessel speed (AIS speed over ground)",
+      "type": "barchart",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgis"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 8,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "median_distance_m"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthm"
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgis"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT CASE WHEN ais.sog_knots IS NULL THEN 'unknown' WHEN ais.sog_knots < 3 THEN '0-3 kn'\n            WHEN ais.sog_knots < 8 THEN '3-8 kn' WHEN ais.sog_knots < 13 THEN '8-13 kn'\n            ELSE '13+ kn' END AS vessel_speed,\n       percentile_cont(0.5) WITHIN GROUP (ORDER BY v.match_distance_m) AS median_distance_m,\n       count(*) AS matches\nFROM validations v\nJOIN detections d ON d.id = v.detection_id\nJOIN scenes s ON s.scene_id = d.scene_id\nLEFT JOIN LATERAL (\n    SELECT a.sog_knots FROM ais_positions a WHERE a.mmsi = v.matched_mmsi\n    ORDER BY abs(extract(epoch FROM (a.ts - s.acquired_at))) LIMIT 1\n) ais ON true\nWHERE $__timeFilter(s.acquired_at)\n  AND ('$shore' = 'All' OR d.shore::text = '$shore')\n  AND ('$detector' = 'All' OR d.detector_version = '$detector')\n  AND v.label = 'matched'\nGROUP BY 1 ORDER BY min(COALESCE(ais.sog_knots, -1))"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        },
+        "xField": "vessel_speed"
+      }
+    },
+    {
+      "id": 7,
+      "title": "Per scene",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgis"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 13,
+        "w": 16,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "match_rate_pct"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "median_distance_m"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthm"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p90_distance_m"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthm"
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgis"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT s.acquired_at, left(s.scene_id, 40) AS scene, count(*) AS detections,\n       count(*) FILTER (WHERE v.label = 'matched') AS matched,\n       count(*) FILTER (WHERE v.label = 'unmatched') AS unmatched,\n       count(*) FILTER (WHERE v.label = 'ambiguous') AS ambiguous,\n       100.0 * count(*) FILTER (WHERE v.label = 'matched') / NULLIF(count(*), 0) AS match_rate_pct,\n       percentile_cont(0.5) WITHIN GROUP (ORDER BY v.match_distance_m) AS median_distance_m\nFROM validations v\nJOIN detections d ON d.id = v.detection_id\nJOIN scenes s ON s.scene_id = d.scene_id\nWHERE $__timeFilter(s.acquired_at)\n  AND ('$shore' = 'All' OR d.shore::text = '$shore')\n  AND ('$detector' = 'All' OR d.detector_version = '$detector')\nGROUP BY s.scene_id, s.acquired_at ORDER BY s.acquired_at DESC"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Matched Detections by distance to the AIS vessel",
+      "type": "geomap",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgis"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 10,
+        "h": 13
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "under 100 m",
+                  "color": "green",
+                  "index": 0
+                },
+                "1": {
+                  "text": "100-250 m",
+                  "color": "yellow",
+                  "index": 1
+                },
+                "2": {
+                  "text": "250 m or more",
+                  "color": "red",
+                  "index": 2
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgis"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ST_Y(d.geom) AS latitude, ST_X(d.geom) AS longitude,\n       CASE WHEN v.match_distance_m < 100 THEN 0 WHEN v.match_distance_m < 250 THEN 1\n            ELSE 2 END AS class,\n       v.match_distance_m, v.matched_mmsi, d.length_m, d.confidence\nFROM validations v\nJOIN detections d ON d.id = v.detection_id\nJOIN scenes s ON s.scene_id = d.scene_id\nWHERE $__timeFilter(s.acquired_at)\n  AND ('$shore' = 'All' OR d.shore::text = '$shore')\n  AND ('$detector' = 'All' OR d.detector_version = '$detector')\n  AND v.label = 'matched'\nLIMIT 2000"
+        }
+      ],
+      "options": {
+        "view": {
+          "id": "coords",
+          "lat": 55.35,
+          "lon": 11.0,
+          "zoom": 8
+        },
+        "basemap": {
+          "type": "osm-standard"
+        },
+        "layers": [
+          {
+            "type": "markers",
+            "name": "Matched",
+            "config": {
+              "style": {
+                "size": {
+                  "fixed": 7
+                },
+                "color": {
+                  "field": "class"
+                },
+                "opacity": 0.9
+              }
+            },
+            "location": {
+              "mode": "coords",
+              "latitude": "latitude",
+              "longitude": "longitude"
+            },
+            "tooltip": true
+          }
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "title": "Matches to review: furthest from their AIS vessel first",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgis"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 22,
+        "w": 14,
+        "h": 13
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "chip"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "image",
+                  "title": "chip"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "match_distance_m"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthm"
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgis"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT '$api_url/v1/detections/' || d.id || '/chip' AS chip, v.matched_mmsi AS mmsi, v.match_distance_m, ais.sog_knots, d.confidence, d.length_m,\n       d.shore::text AS shore, s.acquired_at\nFROM validations v\nJOIN detections d ON d.id = v.detection_id\nJOIN scenes s ON s.scene_id = d.scene_id\nLEFT JOIN LATERAL (\n    SELECT a.sog_knots FROM ais_positions a WHERE a.mmsi = v.matched_mmsi\n    ORDER BY abs(extract(epoch FROM (a.ts - s.acquired_at))) LIMIT 1\n) ais ON true\nWHERE $__timeFilter(s.acquired_at)\n  AND ('$shore' = 'All' OR d.shore::text = '$shore')\n  AND ('$detector' = 'All' OR d.detector_version = '$detector')\n  AND v.label = 'matched'\nORDER BY v.match_distance_m DESC\nLIMIT 40"
+        }
+      ],
+      "options": {
+        "cellHeight": "lg",
+        "showHeader": true
+      }
+    },
+    {
+      "id": 10,
+      "title": "Ambiguous: two AIS tracks inside the gate (strongest first)",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgis"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 12,
+        "h": 12
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "chip"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "image",
+                  "title": "chip"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgis"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT '$api_url/v1/detections/' || d.id || '/chip' AS chip, d.confidence, d.length_m, d.shore::text AS shore, s.acquired_at, s.scene_id\nFROM validations v\nJOIN detections d ON d.id = v.detection_id\nJOIN scenes s ON s.scene_id = d.scene_id\nWHERE $__timeFilter(s.acquired_at)\n  AND ('$shore' = 'All' OR d.shore::text = '$shore')\n  AND ('$detector' = 'All' OR d.detector_version = '$detector')\n  AND v.label = 'ambiguous'\nORDER BY d.confidence DESC\nLIMIT 40"
+        }
+      ],
+      "options": {
+        "cellHeight": "lg",
+        "showHeader": true
+      }
+    },
+    {
+      "id": 11,
+      "title": "Unmatched: longest first (ships without AIS, or false alarms?)",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgis"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 35,
+        "w": 12,
+        "h": 12
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "chip"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "image",
+                  "title": "chip"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgis"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT '$api_url/v1/detections/' || d.id || '/chip' AS chip, d.confidence, d.length_m, d.shore::text AS shore, s.acquired_at, s.scene_id\nFROM validations v\nJOIN detections d ON d.id = v.detection_id\nJOIN scenes s ON s.scene_id = d.scene_id\nWHERE $__timeFilter(s.acquired_at)\n  AND ('$shore' = 'All' OR d.shore::text = '$shore')\n  AND ('$detector' = 'All' OR d.detector_version = '$detector')\n  AND v.label = 'unmatched'\nORDER BY d.length_m DESC NULLS LAST\nLIMIT 40"
+        }
+      ],
+      "options": {
+        "cellHeight": "lg",
+        "showHeader": true
+      }
+    }
+  ]
+}

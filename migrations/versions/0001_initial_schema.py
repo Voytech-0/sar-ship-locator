@@ -19,7 +19,8 @@ SCHEMA_SQL = Path(__file__).resolve().parents[2] / "contracts" / "schema.sql"
 
 DOWNGRADE_SQL = """
 DROP VIEW IF EXISTS dark_ship_candidates;
-DROP TABLE IF EXISTS jobs, ais_loaded_days, ais_positions, validations, detections, scenes, regions CASCADE;
+DROP TABLE IF EXISTS jobs, ais_loaded_days, ais_vessels, ais_positions CASCADE;
+DROP TABLE IF EXISTS validations, detections, scenes, regions CASCADE;
 DROP FUNCTION IF EXISTS scenes_default_acquired_start() CASCADE;
 DROP TYPE IF EXISTS shore_class, match_label, job_status, stage, scene_status;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE SELECT ON TABLES FROM grafana_ro;

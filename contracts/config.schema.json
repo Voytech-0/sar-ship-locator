@@ -39,7 +39,8 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "near_shore_m": {"type": "number", "minimum": 0, "default": 300}
+        "near_shore_m": {"type": "number", "minimum": 0, "default": 300, "description": "Detections within this distance of land are kept but flagged near_shore."},
+        "exclusion_m": {"type": "number", "minimum": 0, "default": 0, "description": "Detections within this distance of land are ignored, like land itself."}
       }
     },
     "validation": {

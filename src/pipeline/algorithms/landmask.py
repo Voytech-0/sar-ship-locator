@@ -89,20 +89,33 @@ def rasterize(geometry: BaseGeometry, transform: Affine6, shape_rc: tuple[int, i
 
 
 class PolygonLandMask:
-    """`LandMask` implementation over land polygons given as shapely geometries (lon/lat)."""
+    """`LandMask` implementation over land polygons given as shapely geometries (lon/lat).
 
-    def __init__(self, land: BaseGeometry | Iterable[BaseGeometry], near_shore_m: float = 300.0) -> None:
+    Three zones around the land: the exclusion zone (land plus `exclusion_m` around it) is ignored like land,
+    the near-shore band (up to `near_shore_m` from land) is kept but flagged, the rest is open water. Radar
+    returns right at a coast (quays, piers, breakwaters, moored boats) are mostly not ships, hence the zone.
+    """
+
+    def __init__(
+        self,
+        land: BaseGeometry | Iterable[BaseGeometry],
+        near_shore_m: float = 300.0,
+        exclusion_m: float = 0.0,
+    ) -> None:
         geoms = [land] if isinstance(land, BaseGeometry) else list(land)
-        self.near_shore_m = near_shore_m
+        self.near_shore_m = max(near_shore_m, exclusion_m)  # the flagged band includes the ignored zone
+        self.exclusion_m = exclusion_m
         self._geoms = [g for g in geoms if not g.is_empty]
         self._tree = STRtree(self._geoms) if self._geoms else None
 
     @classmethod
-    def from_geojson(cls, path: str | Path, near_shore_m: float = 300.0) -> PolygonLandMask:
+    def from_geojson(
+        cls, path: str | Path, near_shore_m: float = 300.0, exclusion_m: float = 0.0
+    ) -> PolygonLandMask:
         data = json.loads(Path(path).read_text())
         features = data["features"] if data.get("type") == "FeatureCollection" else [data]
         geoms = [shape(f.get("geometry", f)) for f in features]
-        return cls(geoms, near_shore_m)
+        return cls(geoms, near_shore_m, exclusion_m)
 
     def water_mask(self, raster: SceneRaster) -> NDArray[np.bool_]:
         """Open water only: excludes land and the near-shore band."""
@@ -110,9 +123,9 @@ class PolygonLandMask:
         return ~near
 
     def not_land_mask(self, raster: SceneRaster) -> NDArray[np.bool_]:
-        """Everything except land; the near-shore band stays valid (to be flagged, not dropped)."""
-        land, _ = self._land_and_near(raster)
-        return ~land
+        """Everything except land and its exclusion zone; the near-shore band stays valid (flagged)."""
+        excluded, _ = self._land_and_near(raster)
+        return ~excluded
 
     def classify(self, position: LonLat) -> ShoreClass:
         if self._tree is None:
@@ -132,11 +145,15 @@ class PolygonLandMask:
         origin = shapely.Point(0.0, 0.0)
         if local.contains(origin) or local.touches(origin):
             return ShoreClass.ON_LAND
-        if local.distance(origin) <= self.near_shore_m:
+        distance = local.distance(origin)
+        if distance <= self.exclusion_m:
+            return ShoreClass.ON_LAND  # ignored like land
+        if distance <= self.near_shore_m:
             return ShoreClass.NEAR_SHORE
         return ShoreClass.OPEN_WATER
 
     def _land_and_near(self, raster: SceneRaster) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
+        """Pixels ignored (land plus the exclusion zone) and pixels in the near-shore band (a superset)."""
         n_rows, n_cols = raster.sigma0_vv.shape
         shape_rc = (n_rows, n_cols)
         if self._tree is None:
@@ -162,8 +179,14 @@ class PolygonLandMask:
         if self.near_shore_m <= 0:
             return land_px, land_px
         local = _to_local(land, lons.mean(), lat0, m_lon, m_lat)
-        buffered = _from_local(local.buffer(self.near_shore_m), lons.mean(), lat0, m_lon, m_lat)
-        return land_px, rasterize(buffered, raster.transform, shape_rc)
+
+        def zone(metres: float) -> NDArray[np.bool_]:
+            if metres <= 0:
+                return land_px
+            buffered = _from_local(local.buffer(metres), lons.mean(), lat0, m_lon, m_lat)
+            return rasterize(buffered, raster.transform, shape_rc)
+
+        return zone(self.exclusion_m), zone(self.near_shore_m)
 
 
 def _to_local(geom: BaseGeometry, lon0: float, lat0: float, m_lon: float, m_lat: float) -> BaseGeometry:

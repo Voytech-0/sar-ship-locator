@@ -151,3 +151,17 @@ def test_is_lazy_and_tolerates_invalid_utf8() -> None:
     it = iter_dma_positions(io.BytesIO(good + bad), REGION)
     assert next(it).mmsi == 219000001  # first row is available before the rest is read
     list(it)  # the bad row is skipped without raising
+
+
+def test_static_vessel_fields_are_parsed() -> None:
+    line = (
+        "14/10/2026 05:17:01,Class A,636014088,55.4,11.0,Under way using engine,0.0,12.3,328.5,326,"
+        "9417206,A8RF2,TAURUS,Tanker,Category X,32,183,GPS,10.9,DKSKA,,AIS,147,36,22,10"
+    )
+    [p], _ = parse(csv_text(line))
+    assert (p.name, p.ship_type, p.length_m, p.width_m) == ("TAURUS", "Tanker", 183.0, 32.0)
+
+
+def test_missing_static_fields_are_none() -> None:
+    [p], _ = parse(csv_text(row("14/10/2026 05:18:01", "Class A", "636014089", "55.4", "11.0")))
+    assert (p.name, p.ship_type, p.length_m, p.width_m) == (None, None, None, None)

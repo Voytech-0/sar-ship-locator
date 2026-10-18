@@ -42,8 +42,8 @@ def build_services(env: Mapping[str, str] | None = None) -> Services:
     polygons = _need(e, "PIPELINE_LAND_POLYGONS")
 
     @cache
-    def land_mask_for(near_shore_m: float) -> LandMask:
-        return PolygonLandMask.from_geojson(polygons, near_shore_m=near_shore_m)
+    def land_mask_for(near_shore_m: float, exclusion_m: float) -> LandMask:
+        return PolygonLandMask.from_geojson(polygons, near_shore_m=near_shore_m, exclusion_m=exclusion_m)
 
     return Services(
         catalogue=CdseCatalogue(),
@@ -52,7 +52,7 @@ def build_services(env: Mapping[str, str] | None = None) -> Services:
         ),
         ais_source=DmaAisSource(),
         store=store,
-        land_mask=lambda cfg: land_mask_for(cfg.land_mask.near_shore_m),
+        land_mask=lambda cfg: land_mask_for(cfg.land_mask.near_shore_m, cfg.land_mask.exclusion_m),
         detectors={"ca-cfar": CaCfarDetector.from_params},
         validator=NearestNeighbourValidator(),
     )

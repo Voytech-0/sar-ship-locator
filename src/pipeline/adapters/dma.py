@@ -36,6 +36,9 @@ _VESSEL_TYPES = {"Class A", "Class B"}
 _REQUIRED = ("Timestamp", "Type of mobile", "MMSI", "Latitude", "Longitude", "SOG", "COG", "Heading")
 
 
+_OPTIONAL = ("Name", "Ship type", "Length", "Width")
+
+
 class _RetryableHttp(Exception):
     pass
 
@@ -49,6 +52,18 @@ def _opt_float(value: str) -> float | None:
         return float(value) if value else None
     except ValueError:
         return None
+
+
+def _text(row: list[str], opt: dict[str, int], name: str) -> str | None:
+    i = opt.get(name)
+    value = row[i].strip() if i is not None and i < len(row) else ""
+    return value if value and value.lower() not in ("undefined", "unknown") else None
+
+
+def _positive(row: list[str], opt: dict[str, int], name: str) -> float | None:
+    i = opt.get(name)
+    value = _opt_float(row[i].strip()) if i is not None and i < len(row) else None
+    return value if value is not None and value > 0 else None
 
 
 class DmaAisSource:
@@ -166,7 +181,7 @@ class DmaAisSource:
                     missing = [c for c in _REQUIRED if c not in header]
                     if missing:
                         raise PermanentError(f"{path.name}: CSV lacks columns {missing}")
-                    col = {name: header.index(name) for name in _REQUIRED}
+                    col = {name: header.index(name) for name in (*_REQUIRED, *_OPTIONAL) if name in header}
                     yield from _filter(reader, col, polygon)
         finally:
             tmp.cleanup()
@@ -175,7 +190,8 @@ class DmaAisSource:
 def _filter(reader: Iterator[list[str]], col: dict[str, int], polygon: Polygon) -> Iterator[AisPosition]:
     min_lon, min_lat, max_lon, max_lat = polygon.bounds
     seen: set[tuple[int, datetime]] = set()
-    need = max(col.values()) + 1
+    need = max(col[c] for c in _REQUIRED) + 1
+    opt = {k: v for k, v in col.items() if k in _OPTIONAL}
     for row in reader:
         if len(row) < need or row[col["Type of mobile"]] not in _VESSEL_TYPES:
             continue
@@ -204,4 +220,8 @@ def _filter(reader: Iterator[list[str]], col: dict[str, int], polygon: Polygon) 
             sog_knots=_opt_float(row[col["SOG"]]),
             cog_deg=_opt_float(row[col["COG"]]),
             heading=int(heading) if heading is not None and 0 <= heading < 360 else None,
+            name=_text(row, opt, "Name"),
+            ship_type=_text(row, opt, "Ship type"),
+            length_m=_positive(row, opt, "Length"),
+            width_m=_positive(row, opt, "Width"),
         )
