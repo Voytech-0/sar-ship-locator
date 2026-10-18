@@ -249,7 +249,7 @@ def list_detections(
     return conn.execute(
         f"""
         SELECT d.id::text AS id, d.scene_id, d.detector_name, d.detector_version,
-               ST_AsGeoJSON(d.geom)::jsonb AS geometry, d.confidence, d.length_m,
+               ST_AsGeoJSON(d.geom)::jsonb AS geometry, d.confidence, d.length_m, d.vh_contrast_db,
                d.shore::text AS shore_class, d.chip_key,
                v.label::text AS label, v.matched_mmsi, v.match_distance_m
         FROM detections d LEFT JOIN validations v ON v.detection_id = d.id
@@ -269,7 +269,8 @@ def replace_detections(
 ) -> list[str]:
     """Replace one Detector version's Detections for a Scene (re-running a stage is idempotent).
 
-    Each detection dict needs `lon`, `lat`, `confidence`, `shore` and may carry `length_m`, `chip_key`.
+    Each detection dict needs `lon`, `lat`, `confidence`, `shore` and may carry `length_m`, `vh_contrast_db`,
+    `chip_key`.
     Returns the new detection ids.
     """
     conn.execute(
@@ -281,8 +282,9 @@ def replace_detections(
         row = conn.execute(
             """
             INSERT INTO detections
-                (scene_id, detector_name, detector_version, geom, confidence, length_m, shore, chip_key)
-            VALUES (%s, %s, %s, ST_SetSRID(ST_MakePoint(%s, %s), 4326), %s, %s, %s::shore_class, %s)
+                (scene_id, detector_name, detector_version, geom, confidence, length_m, vh_contrast_db,
+                 shore, chip_key)
+            VALUES (%s, %s, %s, ST_SetSRID(ST_MakePoint(%s, %s), 4326), %s, %s, %s, %s::shore_class, %s)
             RETURNING id::text AS id
             """,
             (
@@ -293,6 +295,7 @@ def replace_detections(
                 d["lat"],
                 d["confidence"],
                 d.get("length_m"),
+                d.get("vh_contrast_db"),
                 d["shore"],
                 d.get("chip_key"),
             ),

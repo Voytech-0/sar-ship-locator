@@ -57,6 +57,10 @@ class FetchDiagnostics:
     seconds: float
 
 
+class _BandMissing(Exception):
+    """The product has no object for this band."""
+
+
 class _Tally:
     """Bytes and requests of ONE fetch call. Per call, because the API runs several fetches on one fetcher."""
 
@@ -133,41 +137,16 @@ class Sentinel1S3Fetcher:
             raise PermanentError(f"{scene.scene_id} does not intersect Region {region.region_id}")
 
         prefix = self._product_prefix(scene)
-        tiff_key = self._find_key(
-            prefix + "measurement/", lambda n: "-vv-" in n and n.endswith(".tiff"), "VV band"
+        sigma0, grid, window, mode = self._read_band(
+            prefix, "vv", region_poly, scene, region.region_id, tally
         )
-        cal_key = self._find_key(
-            prefix + "annotation/calibration/",
-            lambda n: n.startswith("calibration-") and "-vv-" in n and n.endswith(".xml"),
-            "VV calibration",
-        )
+        r0, _, c0, _ = window
 
-        reader = S3RangeReader(self._client, self._bucket, tiff_key, self._retry, self._header_block)
+        sigma0_vh = None
         try:
-            layout, grid = self._read_header(reader)
-        except (tifffile.TiffFileError, ValueError, struct.error, EOFError, KeyError, IndexError) as exc:
-            raise PermanentError(f"{tiff_key}: unreadable TIFF header: {exc!r}") from exc
-        tally.add(reader.bytes_read, reader.requests)
-
-        window = grid.region_window(region_poly, layout.height, layout.width)
-        if window is None:
-            raise PermanentError(
-                f"{scene.scene_id}: no pixel of the scene lies inside Region {region.region_id}"
-            )
-        r0, r1, c0, c1 = window
-
-        if layout.fast:
-            dn = self._read_rows(tiff_key, layout, r0, r1, c0, c1, tally)
-            mode: Literal["row-range", "full-band"] = "row-range"
-        else:
-            log.warning("%s: layout is not row-striped/uncompressed, downloading the full VV band", tiff_key)
-            dn = self._read_full_band(tiff_key, reader.size, r0, r1, c0, c1, tally)
-            mode = "full-band"
-
-        cal = CalibrationLut.from_xml(self._get_object(cal_key, tally))
-        sigma0 = cal.sigma0(dn, r0, c0)
-        del dn
-        sigma0[~grid.region_mask(region_poly, window)] = np.nan
+            sigma0_vh = self._read_band(prefix, "vh", region_poly, scene, region.region_id, tally, window)[0]
+        except _BandMissing as exc:
+            log.warning("%s: no VH band, detection uses VV only (%s)", scene.scene_id, exc)
 
         fit = grid.fit_affine(window)
         if fit.max_error_px > _AFFINE_WARN_PX:
@@ -202,6 +181,7 @@ class Sentinel1S3Fetcher:
             scene_id=scene.scene_id,
             acquired_at=acquired_at,
             sigma0_vv=sigma0,
+            sigma0_vh=sigma0_vh,
             transform=fit.transform,
             geolocate=geolocate,
             bytes_downloaded=tally.bytes,
@@ -209,6 +189,65 @@ class Sentinel1S3Fetcher:
         )
 
     # ----------------------------------------------------------------- helpers
+
+    def _read_band(
+        self,
+        prefix: str,
+        pol: Literal["vv", "vh"],
+        region_poly: Polygon,
+        scene: SceneRef,
+        region_id: str,
+        tally: _Tally,
+        window: tuple[int, int, int, int] | None = None,
+    ) -> tuple[NDArray[np.float32], GcpGrid, tuple[int, int, int, int], Literal["row-range", "full-band"]]:
+        """Calibrated sigma0 of one polarisation inside the Region window, NaN outside the Region polygon.
+
+        VV picks the window; VH is read over the same window (both bands share the pixel grid). A missing VH
+        band raises `_BandMissing`, a missing VV band is permanent.
+        """
+        name = pol.upper()
+        try:
+            tiff_key = self._find_key(
+                prefix + "measurement/", lambda n: f"-{pol}-" in n and n.endswith(".tiff"), f"{name} band"
+            )
+            cal_key = self._find_key(
+                prefix + "annotation/calibration/",
+                lambda n: n.startswith("calibration-") and f"-{pol}-" in n and n.endswith(".xml"),
+                f"{name} calibration",
+            )
+        except PermanentError as exc:
+            if window is not None:
+                raise _BandMissing(str(exc)) from exc
+            raise
+
+        reader = S3RangeReader(self._client, self._bucket, tiff_key, self._retry, self._header_block)
+        try:
+            layout, grid = self._read_header(reader)
+        except (tifffile.TiffFileError, ValueError, struct.error, EOFError, KeyError, IndexError) as exc:
+            raise PermanentError(f"{tiff_key}: unreadable TIFF header: {exc!r}") from exc
+        tally.add(reader.bytes_read, reader.requests)
+
+        if window is None:
+            window = grid.region_window(region_poly, layout.height, layout.width)
+            if window is None:
+                raise PermanentError(
+                    f"{scene.scene_id}: no pixel of the scene lies inside Region {region_id}"
+                )
+        r0, r1, c0, c1 = window
+        if layout.fast:
+            dn = self._read_rows(tiff_key, layout, r0, r1, c0, c1, tally)
+            mode: Literal["row-range", "full-band"] = "row-range"
+        else:
+            log.warning(
+                "%s: layout is not row-striped/uncompressed, downloading the full %s band", tiff_key, name
+            )
+            dn = self._read_full_band(tiff_key, reader.size, r0, r1, c0, c1, tally)
+            mode = "full-band"
+
+        cal = CalibrationLut.from_xml(self._get_object(cal_key, tally))
+        sigma0 = cal.sigma0(dn, r0, c0)
+        sigma0[~grid.region_mask(region_poly, window)] = np.nan
+        return sigma0, grid, window, mode
 
     def _annotation(
         self, scene: SceneRef, prefix: str, window: tuple[int, int, int, int], tally: _Tally

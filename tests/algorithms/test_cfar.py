@@ -7,6 +7,7 @@ import pytest
 import yaml
 
 from pipeline.algorithms import CaCfarDetector, TooManyHitsError
+from pipeline.algorithms.cfar import vh_contrast_db
 from tests.algorithms.synthetic import (
     TRANSFORM,
     Ship,
@@ -35,6 +36,7 @@ def detector() -> CaCfarDetector:
     cfg = yaml.safe_load(REGION_CONFIG.read_text())["detector"]
     # the floors are tested on their own; the synthetic ships here are small and weak on purpose
     params = {**cfg["params"], "min_length_m": 0.0, "min_confidence": 0.0}
+    params.pop("min_vh_contrast_db", None)
     return CaCfarDetector.from_params({**params, "version": cfg["version"]})
 
 
@@ -110,7 +112,7 @@ def test_length_bias_is_subtracted_but_never_below_one_pixel() -> None:
 def test_region_config_sets_the_floors() -> None:
     cfg = yaml.safe_load(REGION_CONFIG.read_text())["detector"]
     d = CaCfarDetector.from_params({**cfg["params"], "version": cfg["version"]})
-    assert (d.min_length_m, d.min_confidence) == (30.0, 0.7)
+    assert (d.min_length_m, d.min_confidence, d.min_vh_contrast_db) == (30.0, 0.7, 12.0)
 
 
 def test_min_length_and_min_confidence_drop_weak_short_clusters() -> None:
@@ -217,3 +219,37 @@ def test_runtime_on_full_scene_size(detector: CaCfarDetector) -> None:
     elapsed = time.perf_counter() - start
     assert len(found) == 2
     assert elapsed < 90, f"CFAR took {elapsed:.1f} s"
+
+
+def test_vh_contrast_is_reported_and_none_without_vh() -> None:
+    vv = speckled_sea((400, 400), seed=2)
+    add_ships(vv, [Ship(200, 150, 4, 12)])
+    vh = speckled_sea((400, 400), seed=7) * np.float32(0.05)
+    add_ships(vh, [Ship(200, 150, 4, 12, gain=500.0)])
+    (without,) = CaCfarDetector().detect(make_raster(vv))
+    assert without.vh_contrast_db is None
+    (with_vh,) = CaCfarDetector().detect(dataclasses.replace(make_raster(vv), sigma0_vh=vh))
+    # the ship is ~27 dB over the VH sea (gain 500); the box peak is above the mean ship level
+    assert with_vh.vh_contrast_db is not None and 25 < with_vh.vh_contrast_db < 45
+
+
+def test_min_vh_contrast_drops_clusters_that_are_invisible_in_vh() -> None:
+    vv = speckled_sea((400, 400), seed=2)
+    add_ships(vv, [Ship(100, 100, 4, 12), Ship(300, 300, 4, 12)])  # the second one is a sea-state artefact
+    vh = speckled_sea((400, 400), seed=7) * np.float32(0.05)
+    add_ships(vh, [Ship(100, 100, 4, 12, gain=500.0)])
+    raster = dataclasses.replace(make_raster(vv), sigma0_vh=vh)
+    assert len(CaCfarDetector().detect(raster)) == 2
+    (kept,) = CaCfarDetector(min_vh_contrast_db=12.0).detect(raster)
+    assert kept.pixel_box[0] < 200
+    # without a VH band the floor cannot apply
+    assert len(CaCfarDetector(min_vh_contrast_db=12.0).detect(make_raster(vv))) == 2
+
+
+def test_vh_contrast_ignores_masked_and_empty_surroundings() -> None:
+    vh = np.full((100, 100), np.nan, dtype=np.float32)
+    vh[40:44, 40:44] = 1.0
+    assert vh_contrast_db(vh, (40, 40, 44, 44)) is None  # no sea around the box
+    vh[:] = 0.01
+    vh[40:44, 40:44] = 0.0
+    assert vh_contrast_db(vh, (40, 40, 44, 44)) is None  # zero peak

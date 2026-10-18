@@ -162,6 +162,7 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
                 "lat": c.position[1],
                 "confidence": c.confidence,
                 "length_m": c.length_m,
+                "vh_contrast_db": c.vh_contrast_db,
                 "shore": shore.value,
             }
             for c, shore in kept

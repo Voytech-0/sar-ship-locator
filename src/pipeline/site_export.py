@@ -49,8 +49,8 @@ def export_scene(database: Database, store: ObjectStore, scene_id: str, out: Pat
         rows = conn.execute(
             """
             SELECT d.id::text AS id, ST_X(d.geom) AS lon, ST_Y(d.geom) AS lat, d.confidence, d.length_m,
-                   d.shore::text AS shore, d.chip_key, v.label::text AS label, v.matched_mmsi,
-                   v.match_distance_m
+                   d.vh_contrast_db, d.shore::text AS shore, d.chip_key,
+                   v.label::text AS label, v.matched_mmsi, v.match_distance_m
             FROM detections d LEFT JOIN validations v ON v.detection_id = d.id
             WHERE d.scene_id = %s AND d.detector_version = (
                 SELECT detector_version FROM detections WHERE scene_id = %s ORDER BY created_at DESC LIMIT 1)

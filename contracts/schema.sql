@@ -50,6 +50,7 @@ CREATE TABLE detections (
     geom             geometry(Point, 4326) NOT NULL,
     confidence       real NOT NULL CHECK (confidence BETWEEN 0 AND 1),
     length_m         real CHECK (length_m >= 0),
+    vh_contrast_db   real,
     shore            shore_class NOT NULL,
     chip_key         text,
     created_at       timestamptz NOT NULL DEFAULT now()

@@ -89,6 +89,8 @@ class SceneRaster:
     geolocate: Geolocator | None = None
     bytes_downloaded: int = 0  # set by the fetcher; feeds FetchResult.bytes_downloaded
     geometry: SarGeometry | None = None  # set by the fetcher when the annotation has it
+    # VH band on the same pixel grid, calibrated and masked like `sigma0_vv`; None when the product has none.
+    sigma0_vh: NDArray[np.float32] | None = None
 
 
 @dataclass(frozen=True)
@@ -97,6 +99,8 @@ class DetectionCandidate:
     confidence: float  # 0..1
     length_m: float | None
     pixel_box: tuple[int, int, int, int]  # (row0, col0, row1, col1), half-open (end excluded); cuts the Chip
+    # Peak VH in the box over the median VH of the surrounding sea, in dB; None without a VH band.
+    vh_contrast_db: float | None = None
 
 
 @dataclass(frozen=True)
