@@ -283,9 +283,9 @@ def test_rerunning_detect_replaces_that_detector_versions_rows(api: Api) -> None
     api.sql("UPDATE scenes SET status = 'fetched' WHERE scene_id = %s", (SCENE_1,))
     api.run("detect", {"scene_id": SCENE_1, "detector": {"name": "ca-cfar", "version": "1"}})
     api.sql("UPDATE scenes SET status = 'fetched' WHERE scene_id = %s", (SCENE_1,))
-    other = api.run("detect", {"scene_id": SCENE_1, "detector": {"name": "ca-cfar", "version": "4"}})
-    assert other["result"]["detector_version"] == "4"
-    versions = api.client.get(f"/v1/scenes/{SCENE_1}/detections", params={"detector_version": "4"}).json()
+    other = api.run("detect", {"scene_id": SCENE_1, "detector": {"name": "ca-cfar", "version": "5"}})
+    assert other["result"]["detector_version"] == "5"
+    versions = api.client.get(f"/v1/scenes/{SCENE_1}/detections", params={"detector_version": "5"}).json()
     assert len(versions["features"]) == 2
     everything = api.client.get(f"/v1/scenes/{SCENE_1}/detections").json()
     assert len(everything["features"]) == 4
@@ -542,3 +542,14 @@ def test_validated_scene_can_be_validated_again_without_a_raster(api: Api) -> No
     assert api.submit("validate", scene_body()).status_code == 202
     api.drain()
     assert api.scene(SCENE_1)["status"] == "validated"
+
+
+def test_vh_contrast_is_stored_and_served(api: Api) -> None:
+    ring = [(10.7, 55.0), (11.3, 55.0), (11.3, 55.7), (10.7, 55.7), (10.7, 55.0)]
+    api.discover()
+    with api.db.connection() as conn:
+        db.insert_scene(conn, "S1_VH", "great-belt", datetime(2026, 10, 14, 5, 32, tzinfo=UTC), ring)
+        base = {"lon": 11.0, "lat": 55.3, "confidence": 0.9, "length_m": 100.0, "shore": "open_water"}
+        db.replace_detections(conn, "S1_VH", "ca-cfar", "5", [{**base, "vh_contrast_db": 23.5}, base])
+    features = api.client.get("/v1/scenes/S1_VH/detections").json()["features"]
+    assert sorted(f["properties"]["vh_contrast_db"] or -1 for f in features) == [-1, 23.5]

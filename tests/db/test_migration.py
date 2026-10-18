@@ -110,7 +110,7 @@ def test_upgrade_head_twice_is_a_noop(server: Server, empty_db: str) -> None:
     command.upgrade(cfg, "head")
     command.upgrade(cfg, "head")
     with psycopg.connect(server.dsn(empty_db)) as conn:
-        assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [("0007",)]
+        assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [("0008",)]
 
 
 def test_downgrade_keeps_role_while_another_database_uses_it(server: Server, empty_db: str) -> None:

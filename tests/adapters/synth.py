@@ -15,6 +15,7 @@ PREFIX = f"Sentinel-1/SAR/IW_GRDH_1S/2026/10/14/{SCENE_ID}.SAFE/"
 VV_KEY = PREFIX + "measurement/s1d-iw-grd-vv-20261014t053204-20261014t053229-005007-009759-001.tiff"
 VH_KEY = PREFIX + "measurement/s1d-iw-grd-vh-20261014t053204-20261014t053229-005007-009759-002.tiff"
 CAL_VV_KEY = PREFIX + "annotation/calibration/calibration-s1d-iw-grd-vv-20261014t053204-001.xml"
+CAL_VH_KEY = PREFIX + "annotation/calibration/calibration-s1d-iw-grd-vh-20261014t053204-002.xml"
 NOISE_VV_KEY = PREFIX + "annotation/calibration/noise-s1d-iw-grd-vv-20261014t053204-001.xml"
 
 HEIGHT, WIDTH = 1200, 500
@@ -42,12 +43,17 @@ def tiepoints(mapping: Mapping = linear_mapping) -> list[float]:
     return values
 
 
-def make_dn(ship_rc: tuple[int, int] = (650, 250)) -> NDArray[np.uint16]:
-    dn = np.full((HEIGHT, WIDTH), 100, dtype=np.uint16)
+def make_dn(ship_rc: tuple[int, int] = (650, 250), sea: int = 100, ship: int = 1000) -> NDArray[np.uint16]:
+    dn = np.full((HEIGHT, WIDTH), sea, dtype=np.uint16)
     dn[:4] = 0  # no-data border
     r, c = ship_rc
-    dn[r : r + 3, c : c + 3] = 1000
+    dn[r : r + 3, c : c + 3] = ship
     return dn
+
+
+def make_vh_dn(ship_rc: tuple[int, int] = (650, 250)) -> NDArray[np.uint16]:
+    """VH: darker sea (DN 10 -> sigma0 0.01) and a ship 30 dB above it (DN 316 -> 10)."""
+    return make_dn(ship_rc, sea=10, ship=316)
 
 
 def make_tiff(
@@ -101,8 +107,17 @@ def region_ring(
     return [tuple(float(x) for x in mapping(float(c), float(r))) for c, r in corners]  # type: ignore[misc]
 
 
-def upload_product(client: Any, tiff: bytes, cal: bytes | None = None, bucket: str = "eodata") -> None:
+def upload_product(
+    client: Any,
+    tiff: bytes,
+    cal: bytes | None = None,
+    bucket: str = "eodata",
+    vh: bytes | None = None,
+    with_vh: bool = True,
+) -> None:
     client.put_object(Bucket=bucket, Key=VV_KEY, Body=tiff)
-    client.put_object(Bucket=bucket, Key=VH_KEY, Body=b"not used")
+    if with_vh:
+        client.put_object(Bucket=bucket, Key=VH_KEY, Body=vh if vh is not None else make_tiff(make_vh_dn()))
+        client.put_object(Bucket=bucket, Key=CAL_VH_KEY, Body=calibration_xml())
     client.put_object(Bucket=bucket, Key=CAL_VV_KEY, Body=cal if cal is not None else calibration_xml())
     client.put_object(Bucket=bucket, Key=NOISE_VV_KEY, Body=b"<noise/>")  # must be ignored

@@ -70,6 +70,32 @@ def test_row_range_fetch_is_calibrated_cropped_and_masked(
     assert diag.affine_max_error_px < 0.01
 
 
+def test_vh_band_is_read_over_the_same_window_calibrated_and_masked(
+    s3: Any, product: bytes, fast_retry: RetryPolicy
+) -> None:
+    f = fetcher(s3, fast_retry)
+    raster = f.fetch(scene(), region())
+    assert f.last_diagnostics is not None
+    r0, _, c0, _ = f.last_diagnostics.window
+    vh = raster.sigma0_vh
+    assert vh is not None and vh.shape == raster.sigma0_vv.shape and vh.dtype == np.float32
+    assert vh[500 - r0, 200 - c0] == pytest.approx(0.01)  # 10^2 / 100^2
+    assert vh[SHIP[0] - r0, SHIP[1] - c0] == pytest.approx(3.16**2, rel=1e-4)  # 316^2 / 100^2
+    np.testing.assert_array_equal(np.isnan(vh), np.isnan(raster.sigma0_vv))
+
+
+def test_product_without_vh_gives_a_vv_only_raster(s3: Any, fast_retry: RetryPolicy) -> None:
+    synth.upload_product(s3, synth.make_tiff(synth.make_dn(SHIP)), with_vh=False)
+    raster = fetcher(s3, fast_retry).fetch(scene(), region())
+    assert raster.sigma0_vh is None and np.isfinite(raster.sigma0_vv).any()
+
+
+def test_unreadable_vh_band_is_permanent(s3: Any, fast_retry: RetryPolicy) -> None:
+    synth.upload_product(s3, synth.make_tiff(synth.make_dn(SHIP)), vh=b"not a tiff" * 100)
+    with pytest.raises(PermanentError, match="unreadable TIFF"):
+        fetcher(s3, fast_retry).fetch(scene(), region())
+
+
 def test_raster_carries_gcp_geolocation_and_bytes_downloaded(
     s3: Any, product: bytes, fast_retry: RetryPolicy
 ) -> None:
@@ -107,17 +133,17 @@ def test_only_needed_rows_are_downloaded(s3: Any, product: bytes, fast_retry: Re
     diag = f.last_diagnostics
     assert diag is not None
     r0, r1, _, _ = diag.window
-    data_bytes = (r1 - r0) * synth.WIDTH * 2
+    data_bytes = 2 * (r1 - r0) * synth.WIDTH * 2  # the VV and the VH rows
     assert (
-        data_bytes <= diag.bytes_downloaded < data_bytes + 40_000
+        data_bytes <= diag.bytes_downloaded < data_bytes + 80_000
     )  # rows plus header blocks and calibration XML
-    assert diag.bytes_downloaded < 0.5 * len(product)
+    assert diag.bytes_downloaded < 1.1 * len(product)  # two bands, each only the needed rows
     ranges = [c["Range"] for c in client.get_calls if "Range" in c]
     spans = [int(r.split("-")[1]) - int(r.split("=")[1].split("-")[0]) + 1 for r in ranges]
     row_reads = [
         n for n in spans if n % (synth.WIDTH * 2) == 0
     ]  # header blocks are 4096 bytes, not whole rows
-    assert len(row_reads) == -(-(r1 - r0) // 60)  # 60 rows (60 kB) per ranged GET
+    assert len(row_reads) == 2 * -(-(r1 - r0) // 60)  # 60 rows (60 kB) per ranged GET, per band
 
 
 def test_big_endian_product_gives_the_same_sigma0(s3: Any, fast_retry: RetryPolicy) -> None:
