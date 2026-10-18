@@ -26,5 +26,6 @@ land_mask:
 validation:
   gate_m: 500
   ais_margin_minutes: 30
+  sea_level_height_m: 42  # geoid height above WGS 84 in the Great Belt; shifts ships toward the sensor in the image
 retention:
   raster_days: 14

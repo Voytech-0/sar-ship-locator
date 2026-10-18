@@ -31,7 +31,7 @@ from scipy.spatial import cKDTree
 
 from contracts.protocols import AisPosition, DetectionRef, MatchLabel, SarGeometry, ValidationResult
 from pipeline.algorithms.geo import meters_per_degree
-from pipeline.algorithms.sar_geometry import doppler_displacement_m
+from pipeline.algorithms.sar_geometry import image_displacement_m
 
 _KNOT_MS = 0.514444
 
@@ -110,11 +110,11 @@ class NearestNeighbourValidator:
     def tracks_in_image(
         self, positions: Iterable[AisPosition], acquired_at: datetime, geometry: SarGeometry | None
     ) -> dict[int, tuple[float, float]]:
-        """Where every trustworthy track appears in the SAR image (moved by the Doppler displacement)."""
+        """Where every trustworthy track appears in the SAR image (Doppler and elevation displacements)."""
         out: dict[int, tuple[float, float]] = {}
         for mmsi, (lon, lat, ve, vn) in self._tracks(positions, acquired_at).items():
             if geometry is not None:
-                de, dn = doppler_displacement_m(geometry, ve, vn)
+                de, dn = image_displacement_m(geometry, ve, vn)
                 m_lon, m_lat = meters_per_degree(lat)
                 lon, lat = lon + de / m_lon, lat + dn / m_lat
             out[mmsi] = (lon, lat)

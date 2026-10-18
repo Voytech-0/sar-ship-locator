@@ -22,7 +22,7 @@ Automated pipeline: Sentinel-1 GRD scenes of the Great Belt are ingested daily, 
 
 Everything runs: `docker compose up -d --build --wait` starts the whole system (PostGIS, migrations, SeaweedFS object store, land polygon init job, pipeline-api, Prometheus, Grafana, Airflow) in about 30 s once the land file exists. The first real run through Airflow ingested real Sentinel-1 scenes end to end. CI has jobs for Python (lint, mypy, tests incl. Docker), schema, `dags/`, and a compose config and image build.
 
-Gate: `make ci` (ruff, strict mypy, about 366 tests, Docker needed); `dags/` is its own uv project (`cd dags && uv sync && uv run pytest`, 43 tests).
+Gate: `make ci` (ruff, strict mypy, about 369 tests, Docker needed); `dags/` is its own uv project (`cd dags && uv sync && uv run pytest`, 43 tests).
 
 ## How the pieces fit
 
@@ -65,6 +65,8 @@ Grafana has a third dashboard, Match analysis (`sar-matches`): outcome counts, m
 ## Doppler displacement of moving ships (2026-10-18)
 
 A fit over the 47 moving matched ships showed that the azimuth offset between Detection and AIS follows the ship's velocity along the look direction (slope -60 s, r = -0.87), while the offset along the ship's own course against speed has r = -0.03: the cause is the Doppler displacement `(R/V) sin(theta) u_away` (about 60-70 s times the speed away from the sensor, so 5 m/s is 300+ m), not acquisition timing. `fetch` now reads `SarGeometry` (platform heading, speed from the orbit vectors, slant range and incidence near the window centre) from the VV annotation into `scenes.sar_geometry` (migration 0006); `Validator.validate` takes it and moves every AIS track by `algorithms/sar_geometry.doppler_displacement_m` before matching. Re-run on all 9 Scenes: median match distance 131 to 74 m, p90 295 to 118 m, matched count unchanged (58); distance by speed class is now 53 m at 0-3 kn and 100 m above 13 kn (was 50 vs 120-180). The site draws match links to the displaced AIS position (`image_lon`/`image_lat`). Scenes fetched before migration 0006 have no geometry and validate as before; re-fetch them (allowed once the raster is gone).
+
+Residual analysis after the Doppler correction (58 matched open-water ships): the largest remaining error was a range-direction bias of -57 m (detections closer to the sensor), independent of speed, length and Scene (stationary ships too). Fit against `cot(incidence)` gives an effective height of 40 m; per Scene 32-50 m. That is the geoid undulation: the GRD product is geolocated on the WGS 84 ellipsoid, the sea is about 42 m above it in Denmark, so a ship appears `h / tan(theta)` (about 54 m) closer to the sensor. `validation.sea_level_height_m` (Region config, 42) is stored in `SarGeometry.target_height_m` at fetch time and `image_displacement_m` applies it with the Doppler term. Effect on the 9 Scenes: median match distance 74 to 52 m, p90 118 to 97 m (131 / 295 before any correction). The antenna offset (AIS A/B/C/D) does not show up in the data: the along-ship residual has r = 0.10 with ship length. `validate` is now allowed on `validated` Scenes (needs no raster). For Scenes fetched before the height existed, the dev DB was patched with `sar_geometry || '{"target_height_m": 42}'`.
 
 ## Review website (2026-10-17)
 

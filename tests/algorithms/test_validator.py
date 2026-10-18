@@ -5,7 +5,7 @@ import pytest
 
 from contracts.protocols import AisPosition, DetectionRef, MatchLabel, SarGeometry, ValidationResult
 from pipeline.algorithms import NearestNeighbourValidator
-from pipeline.algorithms.sar_geometry import doppler_displacement_m
+from pipeline.algorithms.sar_geometry import doppler_displacement_m, image_displacement_m
 from tests.algorithms.synthetic import ACQUIRED
 
 LAT, LON = 55.35, 10.97
@@ -201,3 +201,25 @@ def test_a_standing_ship_is_unaffected_by_the_geometry() -> None:
     }
     assert r["a"].label == MatchLabel.MATCHED
     assert r["a"].match_distance_m == pytest.approx(40, abs=3)
+
+
+ELEVATED = SarGeometry(-163.6, 7588.0, 867_000.0, 37.9, target_height_m=42.0)
+
+
+def test_a_standing_ship_at_sea_level_height_appears_closer_to_the_sensor() -> None:
+    de, dn = image_displacement_m(ELEVATED, 0.0, 0.0)
+    look = math.radians(ELEVATED.heading_deg + 90)
+    toward_sensor = -(de * math.sin(look) + dn * math.cos(look))
+    assert toward_sensor == pytest.approx(42 / math.tan(math.radians(37.9)), rel=1e-6)  # about 54 m
+    assert de * math.cos(look) - dn * math.sin(look) == pytest.approx(0, abs=1e-6)  # purely in range
+
+
+def test_a_ship_shifted_by_the_sea_height_matches_with_the_geometry() -> None:
+    de, dn = image_displacement_m(ELEVATED, 0.0, 0.0)
+    dets = [det("a", de, dn)]
+    track = [ais(219000001, 0)]
+    plain = NearestNeighbourValidator().validate(dets, track, ACQUIRED, 30)
+    corrected = NearestNeighbourValidator().validate(dets, track, ACQUIRED, 30, ELEVATED)
+    assert plain[0].label == MatchLabel.UNMATCHED
+    assert corrected[0].label == MatchLabel.MATCHED
+    assert corrected[0].match_distance_m == pytest.approx(0, abs=3)

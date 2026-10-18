@@ -49,7 +49,8 @@
       "required": ["gate_m", "ais_margin_minutes"],
       "properties": {
         "gate_m": {"type": "number", "exclusiveMinimum": 0, "description": "Match distance gate."},
-        "ais_margin_minutes": {"type": "integer", "minimum": 0, "description": "AIS must be loaded this long before and after acquisition."}
+        "ais_margin_minutes": {"type": "integer", "minimum": 0, "description": "AIS must be loaded this long before and after acquisition."},
+        "sea_level_height_m": {"type": "number", "default": 0, "description": "Height of the sea surface above the WGS 84 ellipsoid (geoid undulation). Ground-range products are geolocated on the ellipsoid, so a ship at this height appears height * cot(incidence) closer to the sensor than its true position."}
       }
     },
     "retention": {

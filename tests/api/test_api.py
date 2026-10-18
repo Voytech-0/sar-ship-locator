@@ -534,3 +534,11 @@ def test_identifiers_the_database_cannot_hold_are_unknown_not_errors(
     resp = api.submit(stage, body)
     assert resp.status_code == 404
     assert_conforms(resp, "post", f"/stages/{stage}")
+
+
+def test_validated_scene_can_be_validated_again_without_a_raster(api: Api) -> None:
+    api.discover()
+    api.sql("UPDATE scenes SET status = 'validated', raster_key = NULL WHERE scene_id = %s", (SCENE_1,))
+    assert api.submit("validate", scene_body()).status_code == 202
+    api.drain()
+    assert api.scene(SCENE_1)["status"] == "validated"

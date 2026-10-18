@@ -61,13 +61,17 @@ class SarGeometry:
 
     A ship moving in range is displaced along the platform track in the image by about
     `slant_range_m / speed_m_s * sin(incidence)` times its ground speed along the look direction, so a
-    moving ship appears hundreds of metres from where AIS puts it. The Validator corrects for that.
+    moving ship appears hundreds of metres from where AIS puts it, and any ship appears about
+    `target_height_m / tan(incidence)` closer to the sensor than it is. The Validator corrects for both.
     """
 
     heading_deg: float  # platform heading, degrees clockwise from north
     speed_m_s: float  # platform speed
     slant_range_m: float
     incidence_deg: float
+    # Height of the targets above the ellipsoid the product is geolocated on (sea level: the geoid height).
+    # Set from the Region config when the Scene is fetched.
+    target_height_m: float = 0.0
 
 
 @dataclass(frozen=True)

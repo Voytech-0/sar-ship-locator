@@ -37,6 +37,8 @@ class LandMaskConfig(_Strict):
 class ValidationConfig(_Strict):
     gate_m: float = Field(gt=0)
     ais_margin_minutes: int = Field(ge=0)
+    # Height of the sea surface above the ellipsoid the product is geolocated on (the geoid undulation).
+    sea_level_height_m: float = 0.0
 
 
 class RetentionConfig(_Strict):

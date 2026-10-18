@@ -109,7 +109,10 @@ def make_registry(services: Services) -> dict[Stage, StageHandler]:
         with ctx.db.connection() as conn:  # the Region data's own time, used for AIS matching
             db.set_scene_acquired_at(conn, request.scene_id, raster.acquired_at)
             if raster.geometry is not None:
-                db.set_scene_geometry(conn, request.scene_id, dataclasses.asdict(raster.geometry))
+                geometry = dataclasses.replace(
+                    raster.geometry, target_height_m=cfg.validation.sea_level_height_m
+                )
+                db.set_scene_geometry(conn, request.scene_id, dataclasses.asdict(geometry))
         return FetchResult(raster_key=key, bytes_downloaded=raster.bytes_downloaded)
 
     def purge_expired_rasters(
