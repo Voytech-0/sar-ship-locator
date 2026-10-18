@@ -20,7 +20,10 @@ detector:
   # 141 unmatched open-water Detections become 23, no AIS-matched ship of 30 m or longer is lost).
   # v5: v4 plus min_vh_contrast_db 12 (a ship is 12 dB or more above the VH sea around it; on 9 Scenes the
   # 23 unmatched open-water Detections of v4 become 7, one more matched ship is lost). VV and VH are both fetched.
-  version: "5"
+  # v6: v5 on thermal-noise-subtracted sigma0 (the fetcher subtracts the annotation noise LUT). The VH sea
+  # level drops 3-9 dB, so VH contrasts rise by about as much: min_vh_contrast_db 12 becomes 24 (same
+  # separation, AUC 0.97; on 9 Scenes 51 matched and 6 unmatched open-water Detections against 52 and 7).
+  version: "6"
   params:
     guard_cells: 8
     background_cells: 24
@@ -29,7 +32,7 @@ detector:
     length_bias_m: 20
     min_length_m: 30
     min_confidence: 0.7
-    min_vh_contrast_db: 12
+    min_vh_contrast_db: 24
 land_mask:
   near_shore_m: 300
   exclusion_m: 100 # ignore everything within 100 m of land (quays, piers, moored boats)

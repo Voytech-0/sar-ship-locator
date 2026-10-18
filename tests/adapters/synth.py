@@ -16,6 +16,7 @@ VV_KEY = PREFIX + "measurement/s1d-iw-grd-vv-20261014t053204-20261014t053229-005
 VH_KEY = PREFIX + "measurement/s1d-iw-grd-vh-20261014t053204-20261014t053229-005007-009759-002.tiff"
 CAL_VV_KEY = PREFIX + "annotation/calibration/calibration-s1d-iw-grd-vv-20261014t053204-001.xml"
 CAL_VH_KEY = PREFIX + "annotation/calibration/calibration-s1d-iw-grd-vh-20261014t053204-002.xml"
+NOISE_VH_KEY = PREFIX + "annotation/calibration/noise-s1d-iw-grd-vh-20261014t053204-002.xml"
 NOISE_VV_KEY = PREFIX + "annotation/calibration/noise-s1d-iw-grd-vv-20261014t053204-001.xml"
 
 HEIGHT, WIDTH = 1200, 500
@@ -79,6 +80,26 @@ def make_tiff(
     return buf.getvalue()
 
 
+def noise_xml(power: float = 400.0, azimuth: float = 1.0) -> bytes:
+    """Noise annotation (IPF 3): a constant range LUT (DN^2) and one swath with a constant azimuth LUT."""
+    vectors = "".join(
+        f"<noiseRangeVector><line>{line}</line>"
+        f'<pixel count="3">0 250 {WIDTH - 1}</pixel>'
+        f'<noiseRangeLut count="3">{power} {power} {power}</noiseRangeLut></noiseRangeVector>'
+        for line in (0, 600, HEIGHT - 1)
+    )
+    return (
+        '<?xml version="1.0"?><noise><noiseRangeVectorList count="3">'
+        + vectors
+        + '</noiseRangeVectorList><noiseAzimuthVectorList count="1"><noiseAzimuthVector><swath>IW1</swath>'
+        + "<firstAzimuthLine>0</firstAzimuthLine><firstRangeSample>0</firstRangeSample>"
+        + f"<lastAzimuthLine>{HEIGHT - 1}</lastAzimuthLine><lastRangeSample>{WIDTH - 1}</lastRangeSample>"
+        + f'<line count="2">0 {HEIGHT - 1}</line>'
+        + f'<noiseAzimuthLut count="2">{azimuth} {azimuth}</noiseAzimuthLut>'
+        + "</noiseAzimuthVector></noiseAzimuthVectorList></noise>"
+    ).encode()
+
+
 def calibration_xml(sigma: float = 100.0) -> bytes:
     """Calibration annotation with a constant sigmaNought LUT on a sparse grid."""
     vectors = "".join(
@@ -114,10 +135,13 @@ def upload_product(
     bucket: str = "eodata",
     vh: bytes | None = None,
     with_vh: bool = True,
+    noise: bytes | None = None,
 ) -> None:
     client.put_object(Bucket=bucket, Key=VV_KEY, Body=tiff)
     if with_vh:
         client.put_object(Bucket=bucket, Key=VH_KEY, Body=vh if vh is not None else make_tiff(make_vh_dn()))
         client.put_object(Bucket=bucket, Key=CAL_VH_KEY, Body=calibration_xml())
+        if noise is not None:
+            client.put_object(Bucket=bucket, Key=NOISE_VH_KEY, Body=noise)
     client.put_object(Bucket=bucket, Key=CAL_VV_KEY, Body=cal if cal is not None else calibration_xml())
-    client.put_object(Bucket=bucket, Key=NOISE_VV_KEY, Body=b"<noise/>")  # must be ignored
+    client.put_object(Bucket=bucket, Key=NOISE_VV_KEY, Body=noise if noise is not None else b"<noise/>")
