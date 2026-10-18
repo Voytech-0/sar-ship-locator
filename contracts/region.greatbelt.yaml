@@ -24,7 +24,7 @@ land_mask:
   near_shore_m: 300
   exclusion_m: 100 # ignore everything within 100 m of land (quays, piers, moored boats)
 validation:
-  gate_m: 500
+  gate_m: 200
   ais_margin_minutes: 30
   sea_level_height_m: 42  # geoid height above WGS 84 in the Great Belt; shifts ships toward the sensor in the image
 retention:
