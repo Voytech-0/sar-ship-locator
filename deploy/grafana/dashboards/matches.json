@@ -427,6 +427,144 @@
       ]
     },
     {
+      "id": 12,
+      "title": "SAR length against AIS length (matched ships with a known AIS length)",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgis"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 47,
+        "w": 10,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "median_error_m"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthm"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "within_25_pct"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "median_sar_over_ais"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgis"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS ships,\n       percentile_cont(0.5) WITHIN GROUP (ORDER BY d.length_m / av.length_m) AS median_sar_over_ais,\n       percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(d.length_m - av.length_m)) AS median_error_m,\n       100.0 * count(*) FILTER (WHERE abs(d.length_m - av.length_m) <= 0.25 * av.length_m)\n         / NULLIF(count(*), 0) AS within_25_pct\nFROM validations v\nJOIN detections d ON d.id = v.detection_id\nJOIN scenes s ON s.scene_id = d.scene_id\nJOIN ais_vessels av ON av.mmsi = v.matched_mmsi\nWHERE $__timeFilter(s.acquired_at)\n  AND ('$shore' = 'All' OR d.shore::text = '$shore')\n  AND ('$detector' = 'All' OR d.detector_version = '$detector')\n  AND v.label = 'matched' AND d.length_m IS NOT NULL AND av.length_m IS NOT NULL"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Median length by AIS length class: AIS against SAR estimate",
+      "type": "barchart",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgis"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 47,
+        "w": 14,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ais_length_m"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthm"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sar_length_m"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthm"
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "postgis"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT CASE WHEN av.length_m < 60 THEN '1: under 60 m' WHEN av.length_m < 120 THEN '2: 60-120 m'\n            WHEN av.length_m < 200 THEN '3: 120-200 m' ELSE '4: 200 m or longer' END AS ais_length_class,\n       percentile_cont(0.5) WITHIN GROUP (ORDER BY av.length_m) AS ais_length_m,\n       percentile_cont(0.5) WITHIN GROUP (ORDER BY d.length_m) AS sar_length_m\nFROM validations v\nJOIN detections d ON d.id = v.detection_id\nJOIN scenes s ON s.scene_id = d.scene_id\nJOIN ais_vessels av ON av.mmsi = v.matched_mmsi\nWHERE $__timeFilter(s.acquired_at)\n  AND ('$shore' = 'All' OR d.shore::text = '$shore')\n  AND ('$detector' = 'All' OR d.detector_version = '$detector')\n  AND v.label = 'matched' AND d.length_m IS NOT NULL AND av.length_m IS NOT NULL\nGROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        },
+        "xField": "ais_length_class"
+      }
+    },
+    {
       "id": 8,
       "title": "Matched Detections by distance to the AIS vessel",
       "type": "geomap",

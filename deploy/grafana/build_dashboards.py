@@ -430,6 +430,26 @@ _MATCH_FROM_SPEED = _MATCH_FROM.replace(
 WHERE $__timeFilter""",
 )
 
+# Matched Detections whose AIS vessel has a known length: how well does the SAR length agree?
+_LENGTH_FROM = _MATCH_FROM.replace(
+    "WHERE $__timeFilter",
+    "JOIN ais_vessels av ON av.mmsi = v.matched_mmsi\nWHERE $__timeFilter",
+) + "\n  AND v.label = 'matched' AND d.length_m IS NOT NULL AND av.length_m IS NOT NULL"
+LENGTH_AGREEMENT = (
+    "SELECT count(*) AS ships,\n"
+    "       percentile_cont(0.5) WITHIN GROUP (ORDER BY d.length_m / av.length_m) AS median_sar_over_ais,\n"
+    "       percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(d.length_m - av.length_m)) AS median_error_m,\n"
+    "       100.0 * count(*) FILTER (WHERE abs(d.length_m - av.length_m) <= 0.25 * av.length_m)\n"
+    "         / NULLIF(count(*), 0) AS within_25_pct\n" + _LENGTH_FROM
+)
+LENGTH_BY_AIS_CLASS = (
+    "SELECT CASE WHEN av.length_m < 60 THEN '1: under 60 m' WHEN av.length_m < 120 THEN '2: 60-120 m'\n"
+    "            WHEN av.length_m < 200 THEN '3: 120-200 m' ELSE '4: 200 m or longer' END AS ais_length_class,\n"
+    "       percentile_cont(0.5) WITHIN GROUP (ORDER BY av.length_m) AS ais_length_m,\n"
+    "       percentile_cont(0.5) WITHIN GROUP (ORDER BY d.length_m) AS sar_length_m\n" + _LENGTH_FROM +
+    "\nGROUP BY 1 ORDER BY 1"
+)
+
 MATCH_OUTCOMES = (
     "SELECT count(*) FILTER (WHERE v.label = 'matched') AS matched,\n"
     "       count(*) FILTER (WHERE v.label = 'unmatched') AS unmatched,\n"
@@ -599,6 +619,28 @@ def matches() -> dict[str, Any]:
                 _grid(8, 13, 16, 9),
                 fmt="table",
                 overrides=_unit_overrides(_RATE_UNITS),
+            ),
+            sql_panel(
+                12,
+                "SAR length against AIS length (matched ships with a known AIS length)",
+                "stat",
+                LENGTH_AGREEMENT,
+                _grid(0, 47, 10, 5),
+                fmt="table",
+                defaults={"decimals": 1},
+                overrides=_unit_overrides(
+                    {"median_error_m": "lengthm", "within_25_pct": "percent", "median_sar_over_ais": "none"}
+                ),
+            ),
+            sql_panel(
+                13,
+                "Median length by AIS length class: AIS against SAR estimate",
+                "barchart",
+                LENGTH_BY_AIS_CLASS,
+                _grid(10, 47, 14, 9),
+                fmt="table",
+                options={**_BARS, "xField": "ais_length_class"},
+                overrides=_unit_overrides({"ais_length_m": "lengthm", "sar_length_m": "lengthm"}),
             ),
             sql_panel(
                 8,
