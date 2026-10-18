@@ -16,6 +16,10 @@ _Avoid_: Product, image, tile
 A candidate ship found in a Scene, with a geographic position and attributes.
 _Avoid_: Target, hit, vessel, ship
 
+**VH contrast**:
+Peak VH backscatter in a Detection's pixel box over the median VH of the sea ring around it, in dB. A ship stands out in VH; sea-state edges and speckle do not (ADR-0007).
+_Avoid_: VH score
+
 **Chip**:
 A small image cutout around a Detection, kept for review and later model training.
 _Avoid_: Patch, thumbnail, crop

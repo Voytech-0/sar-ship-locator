@@ -190,6 +190,7 @@ class DetectionProperties(BaseModel):
     detector_version: str
     confidence: float = Field(ge=0, le=1)
     length_m: float | None = Field(default=None, ge=0)
+    vh_contrast_db: float | None = None
     shore_class: ShoreClass
     chip_key: str | None = None
     label: MatchLabel | None = None

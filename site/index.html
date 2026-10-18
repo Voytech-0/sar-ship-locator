@@ -80,7 +80,7 @@ function popup(d, v) {
   const ais = d.matched_mmsi ? `<br>AIS ${v && v.name ? v.name : d.matched_mmsi}${v && v.length_m ? ', ' + Math.round(v.length_m) + ' m' : ''}, ${Math.round(d.match_distance_m)} m away` : '';
   const chip = d.chip ? `<img class="chip" src="${base}/${d.chip}" alt="chip">` : '';
   return `<b>${d.label || 'not validated'}</b>${isDark(d) ? ' · dark-ship candidate' : ''}<br>` +
-    `${d.shore.replace('_', ' ')} · ${d.length_m ? Math.round(d.length_m) + ' m' : 'length ?'} · conf ${d.confidence.toFixed(2)}${ais}${chip}`;
+    `${d.shore.replace('_', ' ')} · ${d.length_m ? Math.round(d.length_m) + ' m' : 'length ?'} · conf ${d.confidence.toFixed(2)}${d.vh_contrast_db == null ? '' : ' · VH +' + Math.round(d.vh_contrast_db) + ' dB'}${ais}${chip}`;
 }
 
 function draw() {

@@ -24,8 +24,17 @@ def raster_key(scene_id: str) -> str:
     return f"scenes/{scene_id}/sigma0.npy"
 
 
+def raster_vh_key(scene_id: str) -> str:
+    return f"scenes/{scene_id}/sigma0_vh.npy"
+
+
 def _keys(scene_id: str) -> list[str]:
-    return [raster_key(scene_id), f"scenes/{scene_id}/geo.npz", f"scenes/{scene_id}/meta.json"]
+    return [
+        raster_key(scene_id),
+        raster_vh_key(scene_id),
+        f"scenes/{scene_id}/geo.npz",
+        f"scenes/{scene_id}/meta.json",
+    ]
 
 
 def _axis(n: int) -> NDArray[np.float64]:
@@ -38,6 +47,10 @@ def save_raster(store: ObjectStore, raster: SceneRaster) -> str:
     buf = io.BytesIO()
     np.save(buf, raster.sigma0_vv.astype(np.float32, copy=False), allow_pickle=False)
     store.put(raster_key(raster.scene_id), buf.getvalue(), "application/octet-stream")
+    if raster.sigma0_vh is not None:
+        vh = io.BytesIO()
+        np.save(vh, raster.sigma0_vh.astype(np.float32, copy=False), allow_pickle=False)
+        store.put(raster_vh_key(raster.scene_id), vh.getvalue(), "application/octet-stream")
 
     ra, ca = _axis(rows), _axis(cols)
     if raster.geolocate is not None:
@@ -77,6 +90,13 @@ def load_raster(store: ObjectStore, scene_id: str) -> SceneRaster:
             f"{scene_id}: stored raster is missing (was it deleted or never fetched?)"
         ) from exc
 
+    try:
+        sigma0_vh = cast(
+            NDArray[np.float32], np.load(io.BytesIO(store.get(raster_vh_key(scene_id))), allow_pickle=False)
+        )
+    except FileNotFoundError:
+        sigma0_vh = None  # a raster stored before VH was fetched, or a product without one
+
     lon_i = RegularGridInterpolator(
         (geo["rows"], geo["cols"]), geo["lon"], bounds_error=False, fill_value=None
     )
@@ -95,6 +115,7 @@ def load_raster(store: ObjectStore, scene_id: str) -> SceneRaster:
         scene_id=meta["scene_id"],
         acquired_at=datetime.fromisoformat(meta["acquired_at"]),
         sigma0_vv=cast(NDArray[np.float32], sigma0),
+        sigma0_vh=sigma0_vh,
         transform=cast(tuple[float, float, float, float, float, float], tuple(meta["transform"])),
         geolocate=geolocate,
         bytes_downloaded=int(meta.get("bytes_downloaded", 0)),

@@ -31,7 +31,7 @@
         "version": {"type": "string"},
         "params": {
           "type": "object",
-          "description": "Detector-specific. For ca-cfar: guard_cells, background_cells, pfa, min_cluster_pixels, length_bias_m, min_length_m, min_confidence."
+          "description": "Detector-specific. For ca-cfar: guard_cells, background_cells, pfa, min_cluster_pixels, length_bias_m, min_length_m, min_confidence, min_vh_contrast_db."
         }
       }
     },

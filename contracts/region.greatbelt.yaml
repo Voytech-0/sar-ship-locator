@@ -18,7 +18,9 @@ detector:
   # median absolute error fell from 22 to 15 m on 59 matched ships).
   # v4: v3 plus min_length_m 30 and min_confidence 0.7 (weak, short clusters are mostly false alarms: on 9 Scenes
   # 141 unmatched open-water Detections become 23, no AIS-matched ship of 30 m or longer is lost).
-  version: "4"
+  # v5: v4 plus min_vh_contrast_db 12 (a ship is 12 dB or more above the VH sea around it; on 9 Scenes the
+  # 23 unmatched open-water Detections of v4 become 7, one more matched ship is lost). VV and VH are both fetched.
+  version: "5"
   params:
     guard_cells: 8
     background_cells: 24
@@ -27,6 +29,7 @@ detector:
     length_bias_m: 20
     min_length_m: 30
     min_confidence: 0.7
+    min_vh_contrast_db: 12
 land_mask:
   near_shore_m: 300
   exclusion_m: 100 # ignore everything within 100 m of land (quays, piers, moored boats)

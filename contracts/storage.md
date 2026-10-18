@@ -5,6 +5,7 @@ One bucket in the S3-compatible object store, `sar`. All keys are relative to it
 | Key | Written by | Content |
 |---|---|---|
 | `scenes/{scene_id}/sigma0.npy` | `fetch` | VV band as linear sigma0 (float32 `.npy`), cropped to the Region window; NaN outside the Region polygon. Sentinel-1 GRD has no CRS, so it is not a GeoTIFF |
+| `scenes/{scene_id}/sigma0_vh.npy` | `fetch` | VH band on the same pixel grid, calibrated and masked like `sigma0.npy`. Absent when the product has no VH band (and for rasters stored before VH was fetched) |
 | `scenes/{scene_id}/geo.npz` | `fetch` | Lon/lat lattice (every 32 px) sampled from the GCP geolocation; `detect` rebuilds `SceneRaster.geolocate` by bilinear interpolation |
 | `scenes/{scene_id}/meta.json` | `fetch` | Scene id, acquisition time of the window's centre row, shape, coarse affine, bytes downloaded |
 | `scenes/{scene_id}/preview.png` | `detect` | VV preview for the review website: grey + alpha PNG on a north-up lon/lat grid (30 m px), dB-stretched like Chips; alpha 0 outside the Region. Kept after the raster is deleted |

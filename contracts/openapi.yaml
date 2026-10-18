@@ -523,6 +523,9 @@ components:
           type: [number, 'null']
           minimum: 0
           description: Estimated length from the pixel cluster extent.
+        vh_contrast_db:
+          type: [number, 'null']
+          description: Peak VH in the cluster over the median VH of the surrounding sea, in dB. Null when the Scene has no VH band.
         shore_class: {$ref: '#/components/schemas/ShoreClass'}
         chip_key: {type: [string, 'null']}
         label:
