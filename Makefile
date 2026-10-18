@@ -24,7 +24,7 @@ check-contracts:
 check-schema:
 	scripts/check_schema.sh
 
-# Exports the newest validated Scene to site/data (needs the stack's STORE_* and PIPELINE_DATABASE_URL in the env), then
+# Exports the newest validated Scenes (up to 50) to site/data (needs the stack's STORE_* and PIPELINE_DATABASE_URL in the env), then
 # serve it: cd site && python3 -m http.server 8099
 site:
 	uv run python -m pipeline.site_export

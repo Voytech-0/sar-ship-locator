@@ -132,7 +132,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", default="site/data", type=Path)
-    ap.add_argument("--latest", type=int, default=1, help="newest N validated Scenes")
+    ap.add_argument("--latest", type=int, default=50, help="newest N validated Scenes")
     ap.add_argument("--scene", action="append", help="export this Scene id (repeatable)")
     args = ap.parse_args(argv)
 

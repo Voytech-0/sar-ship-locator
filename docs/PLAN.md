@@ -6,9 +6,9 @@ Contract first, then components in parallel against fakes, each gated by its own
 
 | Container | Purpose | Talks to (protocol) |
 |---|---|---|
-| `airflow-*` (api-server, scheduler, dag-processor) | Schedules DAGs; thin, never processes data (ADR-0001, 0002) | `pipeline-api` (HTTP/JSON), `airflow-db` (SQL) |
+| `airflow-*` (api-server, scheduler, dag-processor, triggerer for the deferrable operators) | Schedules DAGs; thin, never processes data (ADR-0001, 0002) | `pipeline-api` (HTTP/JSON), `airflow-db` (SQL) |
 | `airflow-db` | Airflow metadata only | — |
-| `pipeline-api` | FastAPI. Runs the stages as async jobs; owns all geospatial dependencies and all business logic | `postgis` (SQL), `minio` (S3), CDSE and DMA (HTTPS, via adapters), Prometheus scrapes `/metrics` |
+| `pipeline-api` | FastAPI. Runs the stages as async jobs; owns all geospatial dependencies and all business logic | `postgis` (SQL), `objectstore` (S3), CDSE and DMA (HTTPS, via adapters), Prometheus scrapes `/metrics` |
 | `postgis` | Application database: Regions, Scenes, Detections, AIS Positions, Validations, Jobs | — |
 | `objectstore` | Object store: cropped Scene rasters, Chips, dataset exports | — |
 | `prometheus` | Scrapes pipeline metrics | `pipeline-api` |
@@ -21,7 +21,7 @@ Not containers: the Detector, Validator and adapters are Python modules inside `
 
 1. **`openapi.yaml`**: hand-written HTTP API (below). `pipeline-api` must conform; Airflow DAG tests are built from it.
 2. **`schema.sql` + Alembic migration `0001`**: tables, enums (scene status, match label), spatial indexes.
-3. **`storage.md`**: object store key layout (`scenes/{scene_id}/vv.tif`, `chips/{detection_id}.png`, `datasets/{version}/manifest.json`).
+3. **`storage.md`**: object store key layout (`scenes/{scene_id}/sigma0.npy`, `geo.npz`, `meta.json`, `preview.png`, `chips/{detection_id}.png`, `datasets/{version}/manifest.json`).
 4. **`protocols.py`**: `CatalogueClient`, `SceneFetcher`, `AisSource`, `Detector`, `Validator`, `ObjectStore`, plus the value types they exchange.
 5. **`metrics.md`**: metric names and labels.
 6. **`config.schema.json`** and example `region.greatbelt.yaml`: Region polygon, CFAR parameters, match gate.

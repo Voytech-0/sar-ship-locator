@@ -59,6 +59,7 @@ class ParseStats:
     malformed: int = 0
     non_vessel: int = 0
     outside_region: int = 0
+    duplicate: int = 0
     yielded: int = 0
 
 
@@ -87,6 +88,7 @@ def iter_dma_positions(
         i_lat, i_lon, i_ts, i_type = idx["lat"], idx["lon"], idx["timestamp"], idx["mobile_type"]
         i_mmsi = idx["mmsi"]
         width = max(idx[f] for f in COLUMNS) + 1
+        seen: set[tuple[int, datetime]] = set()
 
         for row in reader:
             stats.rows_read += 1
@@ -119,6 +121,10 @@ def iter_dma_positions(
             if not 100_000_000 <= mmsi <= 999_999_999:
                 stats.malformed += 1
                 continue
+            if (mmsi, ts) in seen:
+                stats.duplicate += 1
+                continue
+            seen.add((mmsi, ts))
             stats.yielded += 1
             yield AisPosition(
                 mmsi=mmsi,
