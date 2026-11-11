@@ -109,7 +109,7 @@ schema = schemathesis.pytest.from_fixture("contract_schema")
 
 
 @schema.parametrize()
-@settings(max_examples=30, deadline=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=30, deadline=None, suppress_health_check=list(HealthCheck), print_blob=True)
 def test_api_conforms_to_openapi(case: Any) -> None:
     if case.operation.label == "GET /scenes":
         # Contract gap (reported): GET /scenes documents only 200, but bad query parameters (limit out of

@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 name="sar-schema-check-$$"
-trap 'docker rm -f "$name" >/dev/null 2>&1 || true' EXIT
+trap 'docker rm -f -v "$name" >/dev/null 2>&1 || true' EXIT
 docker build -q -t sar-postgis:16 deploy/postgis >/dev/null
 docker run -d --name "$name" -e POSTGRES_PASSWORD=x sar-postgis:16 >/dev/null
 

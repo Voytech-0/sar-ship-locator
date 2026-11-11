@@ -57,7 +57,7 @@ Matching ships against AIS looked easy and was not. The first real run put match
 - **Antenna position.** AIS reports the antenna, usually aft, while the radar return is centred on the hull: Detections of large ships sat 40-60 m ahead of their AIS point. The antenna distances from the AIS static data move the reference to the hull centre (median 33 m, p90 67 m).
 - With the positions fixed the match gate went from 500 to 200 m, which removed most ambiguous matches.
 
-Details, numbers and the things that did not pan out (structure displacement, antenna offset) are in `AGENTS.md`.
+Details, numbers and the things that did not pan out (structure displacement, antenna offset) are in `docs/studies/`.
 
 ## Where to look
 
