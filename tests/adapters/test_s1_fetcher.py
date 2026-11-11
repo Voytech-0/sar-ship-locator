@@ -84,6 +84,28 @@ def test_vh_band_is_read_over_the_same_window_calibrated_and_masked(
     np.testing.assert_array_equal(np.isnan(vh), np.isnan(raster.sigma0_vv))
 
 
+def test_thermal_noise_is_subtracted_from_both_bands(s3: Any, fast_retry: RetryPolicy) -> None:
+    synth.upload_product(s3, synth.make_tiff(synth.make_dn(SHIP)), noise=synth.noise_xml(400.0))
+    f = fetcher(s3, fast_retry)
+    raster = f.fetch(scene(), region())
+    assert f.last_diagnostics is not None
+    r0, _, c0, _ = f.last_diagnostics.window
+    assert raster.sigma0_vh is not None
+    # VV: (DN 100^2 - 400) / 100^2 for the sea, (1000^2 - 400) / 100^2 for the ship
+    assert raster.sigma0_vv[500 - r0, 200 - c0] == pytest.approx(0.96)
+    assert raster.sigma0_vv[SHIP[0] - r0, SHIP[1] - c0] == pytest.approx(99.96)
+    # VH sea: DN 10 -> 100 DN^2 is under the 400 DN^2 noise, so the floor applies
+    assert raster.sigma0_vh[500 - r0, 200 - c0] == pytest.approx(0.1 * 400 / 100**2)
+    plain = fetcher(s3, fast_retry, subtract_noise=False).fetch(scene(), region())
+    assert plain.sigma0_vv[500 - r0, 200 - c0] == pytest.approx(1.0)
+
+
+def test_unparseable_noise_annotation_is_permanent(s3: Any, fast_retry: RetryPolicy) -> None:
+    synth.upload_product(s3, synth.make_tiff(synth.make_dn(SHIP)), noise=b"not xml")
+    with pytest.raises(PermanentError, match="noise"):
+        fetcher(s3, fast_retry).fetch(scene(), region())
+
+
 def test_product_without_vh_gives_a_vv_only_raster(s3: Any, fast_retry: RetryPolicy) -> None:
     synth.upload_product(s3, synth.make_tiff(synth.make_dn(SHIP)), with_vh=False)
     raster = fetcher(s3, fast_retry).fetch(scene(), region())

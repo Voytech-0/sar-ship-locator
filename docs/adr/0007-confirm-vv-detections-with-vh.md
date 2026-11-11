@@ -30,5 +30,5 @@ A VH contrast floor of 12 dB alone keeps 58 of 59 matched and 23 of 136 unmatche
 - Contract changes, all additive: `SceneRaster.sigma0_vh`, `DetectionCandidate.vh_contrast_db`, `detections.vh_contrast_db` (migration 0008), the OpenAPI `Detection.vh_contrast_db`, one storage key, and the CFAR parameter `min_vh_contrast_db`.
 - The 12 dB floor and the ring geometry were fitted on 59 matched ships; treat them as a starting point. A matched 37 m ship had 8 dB.
 - The gate can hide a real ship with a weak cross-polar return: the dark-ship candidate at 55.3231 N 11.0001 E (105 m, strong in VV, 7 dB in VH) is a v4 Detection and not a v5 one. Compare versions before reading anything into a missing candidate.
-- VH is not noise-subtracted, so the contrast of very weak targets is optimistic or pessimistic depending on the noise floor of the sub-swath.
+- The first version ran on sigma0 without thermal noise subtraction; from detector v6 `fetch` subtracts it, VH contrasts rise by 3-9 dB and the floor is 24 dB (AGENTS.md has the comparison). The 12 dB in the table above belongs to the unsubtracted data.
 - Scenes fetched before this change have no VH raster; they get VH when fetched again (allowed once the raster is gone).

@@ -32,7 +32,7 @@ from contracts.protocols import PermanentError, Region, SarGeometry, SceneRaster
 
 from ._retry import RetryPolicy
 from ._s3 import S3RangeReader, is_retryable, raise_if_permanent, ranged_get
-from .s1_calibration import CalibrationLut
+from .s1_calibration import CalibrationLut, NoiseLut
 from .s1_geo import GcpGrid, ring_to_polygon
 
 log = logging.getLogger(__name__)
@@ -118,7 +118,9 @@ class Sentinel1S3Fetcher:
         chunk_bytes: int = 64 << 20,
         max_workers: int = 2,
         header_block: int = 1 << 20,
+        subtract_noise: bool = True,
     ) -> None:
+        self._subtract_noise = subtract_noise
         self._client = client
         self._bucket = bucket
         self._retry = retry or RetryPolicy()
@@ -245,9 +247,26 @@ class Sentinel1S3Fetcher:
             mode = "full-band"
 
         cal = CalibrationLut.from_xml(self._get_object(cal_key, tally))
-        sigma0 = cal.sigma0(dn, r0, c0)
+        noise = self._read_noise(prefix, pol, scene, tally) if self._subtract_noise else None
+        sigma0 = cal.sigma0(dn, r0, c0, noise)
         sigma0[~grid.region_mask(region_poly, window)] = np.nan
         return sigma0, grid, window, mode
+
+    def _read_noise(self, prefix: str, pol: str, scene: SceneRef, tally: _Tally) -> NoiseLut | None:
+        """The thermal noise LUT of one band; None (with a warning) when the product has none."""
+        try:
+            key = self._find_key(
+                prefix + "annotation/calibration/",
+                lambda n: n.startswith("noise-") and f"-{pol}-" in n and n.endswith(".xml"),
+                f"{pol.upper()} noise",
+            )
+        except PermanentError as exc:
+            log.warning("%s: %s, thermal noise is not subtracted", scene.scene_id, exc)
+            return None
+        noise = NoiseLut.from_xml(self._get_object(key, tally))
+        if noise is None:
+            log.warning("%s: %s has no noise vectors, thermal noise is not subtracted", scene.scene_id, key)
+        return noise
 
     def _annotation(
         self, scene: SceneRef, prefix: str, window: tuple[int, int, int, int], tally: _Tally
