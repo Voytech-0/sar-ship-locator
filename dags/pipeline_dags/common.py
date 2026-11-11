@@ -36,8 +36,9 @@ def ais_extra_days() -> int:
 
 # A manually triggered run has no data interval in Airflow 3 (`data_interval_start` is None) and may have
 # no logical date either, only `run_after` (when it was triggered). Use the first one that exists.
+# The optional DAG param `since` (an ISO timestamp, for a backfill from a chosen date) wins when set.
 SINCE_TEMPLATE = (
-    "{{ ((data_interval_start or logical_date or dag_run.run_after)"
+    "{{ params.since or ((data_interval_start or logical_date or dag_run.run_after)"
     " - macros.timedelta(days=2)).isoformat() }}"
 )
 
