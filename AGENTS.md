@@ -45,6 +45,8 @@ Region config parameters; history and evidence in `docs/studies/`.
 - Validation: AIS tracks moved by Doppler displacement, sea-level height 42 m (`validation.sea_level_height_m`) and antenna-to-hull-centre offset before matching; `validation.gate_m` 200 ([match-geometry](docs/studies/match-geometry.md)).
 - `detector.version` (now "6") labels a parameter set: bump it in the Region config whenever a detector parameter changes; `detect` then makes a new Job and the old version's Detections stay. `validate` validates each version on its own; stage requests take `force: true` for a rerun.
 
+Held-out check (2026-11-12, detector v6, 9 fit against 36 later Scenes, parameters frozen): unmatched share 10 % against 7 %, length ratio 1.01 against 0.98, match distance median 35 against 42 m, but recall of ships of 30 m and longer 91 % against 88 % (60-120 m: 94 % against 82 %). One held-out candidate is a split fragment of a 366 m ship. Details and proposed changes in [heldout-evaluation](docs/studies/heldout-evaluation.md).
+
 ## Tools
 
 - Dataset export: `python -m pipeline.dataset <version>` writes `datasets/<version>/manifest.json` and `chips.npz` to the object store; weak AIS labels, immutable versions, splits over whole Scenes.
@@ -64,6 +66,6 @@ Region config parameters; history and evidence in `docs/studies/`.
 ## Open items
 
 1. **Sea-level sigma0 looks high:** open water median about -12.5 dB in VV for five of the nine Scenes (-21 to -22 dB on the 12 Oct and 15 Oct 05:24 ones), expected -20 to -25 dB. Noise subtraction moved it by only 0.1-0.4 dB; most likely wind-roughened sea, unverified.
-2. **Detection quality:** recall against AIS is 100 percent for ships of 30 m and longer on the 9 Scenes, so the open question is false alarms; GO-CFAR or a texture test for sea-state edges; `dark_ship_candidates` thresholds are a starting point; train a first classifier on the dataset export.
+2. **Detection quality:** with v6 floors recall of ships of 30 m and longer is about 90 percent (held-out study); store the dropped clusters to see why; GO-CFAR or a texture test for sea-state edges; `dark_ship_candidates` thresholds are a starting point; train a first classifier on the dataset export.
 3. **Flaky test:** one schemathesis subtest failed once in a full-suite run and did not reproduce. 20 full-suite runs on 2026-11-11 (18 plus 2 redone after Docker had stopped), all 400 passed, not reproduced; `print_blob=True` is now set so the next failure prints its reproduction line. The DB test fixture leaked one 2 GB Docker volume per run (`docker rm -f` without `-v`), fixed; check `docker system df` after test loops.
 4. **Not done:** per-Detection row time for validation (about 40 m for a 15 kn ship); four alert rules exist and are unit-tested (`make check-alerts`).
