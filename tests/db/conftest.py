@@ -102,7 +102,7 @@ def server() -> Iterator[Server]:
                 time.sleep(0.5)
         yield srv
     finally:
-        subprocess.run(["docker", "rm", "-f", container], capture_output=True, check=False)
+        subprocess.run(["docker", "rm", "-f", "-v", container], capture_output=True, check=False)
 
 
 @pytest.fixture(scope="session")
