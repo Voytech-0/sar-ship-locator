@@ -21,7 +21,7 @@ Automated pipeline: Sentinel-1 GRD scenes of the Great Belt are ingested daily, 
 `contracts/` API, schema, protocols, config, metrics, storage. `src/pipeline/` package. `dags/` Airflow (own uv project). `deploy/` Dockerfiles and compose pieces. `migrations/` Alembic. `tests/` including `tests/fixtures/`. `docs/` plan and ADRs.
 ## Current state (2026-11-11)
 
-Everything runs: `docker compose up -d --build --wait` starts the whole system (PostGIS, migrations, SeaweedFS, land init job, pipeline-api, Prometheus, Grafana, Airflow) in about 30 s once the land file exists. Real Sentinel-1 Scenes went through Airflow end to end. The 9 Scenes of 12-15 Oct in the local stack were patched by hand (VH, noise-subtracted rasters and `target_height_m` came from experiment files, not from the current `fetch`) until the clean ingest of `docs/WORKPLAN.md` Task B is done.
+Everything runs: `docker compose up -d --build --wait` starts the whole system (PostGIS, migrations, SeaweedFS, land init job, pipeline-api, Prometheus, Grafana, Airflow) in about 30 s once the land file exists. Real Sentinel-1 Scenes went through Airflow end to end. The local stack was rebuilt from scratch on 2026-11-12: 49 Scenes since 12 Oct went through the real `fetch` (VV, VH, noise LUT, geometry), `detect`, AIS backfill and `validate` with no hand patching, and the 9 original Scenes reproduce the earlier numbers exactly ([clean-ingest](docs/studies/clean-ingest.md)).
 
 Gate: `make ci` (ruff, strict mypy, 400 tests, 4 skipped without RUN_LIVE, Docker needed); `dags/` is its own uv project (`cd dags && uv sync && uv run pytest`, 43 tests).
 

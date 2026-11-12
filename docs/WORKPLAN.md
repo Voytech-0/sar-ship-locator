@@ -88,42 +88,42 @@ of Task C.
 
 ### B1. Baseline and a single real fetch (no deletion yet)
 
-- [ ] Start the stack: `docker compose up -d --build --wait`. All services healthy.
-- [ ] Save the baseline to `docs/studies/clean-ingest.md`: for each of the 9 Scenes and detector version 6, the
+- [x] Start the stack: `docker compose up -d --build --wait`. All services healthy.
+- [x] Save the baseline to `docs/studies/clean-ingest.md`: for each of the 9 Scenes and detector version 6, the
   open-water counts of matched, unmatched and ambiguous Detections, plus median and p90 match distance, and the
   rows of `dark_ship_candidates`. DB access:
   `docker compose exec -T postgis psql -U sar -d sar -At -c "..."`. Expected totals from `AGENTS.md`: 51
   matched, 6 unmatched, 3 candidates. If the DB disagrees, write down what the DB says and continue.
-- [ ] Re-fetch one Scene through the real code. `fetch` is refused while the raster exists, so this needs the
+- [x] Re-fetch one Scene through the real code. `fetch` is refused while the raster exists, so this needs the
   raster of one Scene deleted from the store first. **Ask first** which Scene (suggest the 14 Oct one) and get
   a yes for deleting its `scenes/{id}/sigma0.npy`, `sigma0_vh.npy`, `geo.npz`, `meta.json`.
-- [ ] Then: `fetch`, `detect`, `validate` (with `"force": true`) for that Scene through the API
+- [x] Then: `fetch`, `detect`, `validate` (with `"force": true`) for that Scene through the API
   (`POST /v1/stages/...`, see `contracts/openapi.yaml`), and compare its counts with the baseline row. Any
   difference is a finding: record it with the numbers, look for the cause (experiment file vs real fetch),
   and tell the user before B2.
 
 ### B2. Fresh stack, ingest through Airflow
 
-- [ ] Read `dags/scene_pipeline.py` and `dags/pipeline_dags/common.py`. Check whether a manually triggered run
+- [x] Read `dags/scene_pipeline.py` and `dags/pipeline_dags/common.py`. Check whether a manually triggered run
   can pass `since`. If it cannot, add an optional DAG param `since` (when absent, the existing
   `SINCE_TEMPLATE` behaviour stays) with tests next to `dags/tests/test_manual_runs.py`. This is a `dags/`
   change only; the API contract already has `since`.
-- [ ] Measure the stored size of one Scene's raster objects and the number of Scenes expected (about 2 per day
+- [x] Measure the stored size of one Scene's raster objects and the number of Scenes expected (about 2 per day
   since 12 Oct). Rasters are kept 14 days (`retention.raster_days`). Check free disk covers it with margin;
   if not, stop and ask.
-- [ ] **Ask first**, then remove the DB and object-store volumes. List them with `docker volume ls` and keep
+- [x] **Ask first**, then remove the DB and object-store volumes. List them with `docker volume ls` and keep
   the land-polygon volume (rebuilding it needs the Overpass API). Tell the user this deletes the Detections of
   versions 2 to 5, which exist nowhere else.
-- [ ] `docker compose up -d --build --wait`, then trigger `scene_pipeline` with `since` = 2026-10-12T00:00:00Z.
+- [x] `docker compose up -d --build --wait`, then trigger `scene_pipeline` with `since` = 2026-10-12T00:00:00Z.
   Every discovered Scene should reach `detected`. Record failed Scenes with their error; do not retry in a loop.
-- [ ] Load AIS for every day from 12 Oct to today minus 3 days. Preferred: an Airflow backfill of `ais_load`
+- [x] Load AIS for every day from 12 Oct to today minus 3 days. Preferred: an Airflow backfill of `ais_load`
   over that range. If that fights the DAG's lag logic, call `POST /v1/stages/ais-load` per day and say so in
   the write-up. Then let the `validation` DAG run, or trigger it.
-- [ ] Reproduction check in `docs/studies/clean-ingest.md`: the same table as the baseline for the 9 original
+- [x] Reproduction check in `docs/studies/clean-ingest.md`: the same table as the baseline for the 9 original
   Scenes, side by side, with the differences. State plainly whether 51 / 6 / 3 reproduced.
-- [ ] Check the observability side on the fresh stack: the three Grafana dashboards show data, Prometheus
+- [x] Check the observability side on the fresh stack: the three Grafana dashboards show data, Prometheus
   targets are up, no alert fires that should not.
-- [ ] Update `AGENTS.md` "Current state" (no hand-patched Scenes any more) and open the PR.
+- [x] Update `AGENTS.md` "Current state" (no hand-patched Scenes any more) and open the PR.
 
 Done when: all Scenes since 12 Oct are `validated` or listed as failed with a reason, the reproduction table is
 written, and the user has the differences in the PR body.
