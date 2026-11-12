@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from airflow.sdk import dag, task, task_group
+from airflow.sdk import Param, dag, task, task_group
 
 from pipeline_dags.client import PipelineApi
 from pipeline_dags.common import SINCE_TEMPLATE, START_DATE, default_args
@@ -18,6 +18,13 @@ from pipeline_dags.operators import StageJobOperator
     catchup=False,
     max_active_runs=1,
     default_args=default_args(),
+    params={
+        "since": Param(
+            None,
+            type=["null", "string"],
+            description="Optional ISO timestamp to discover from (default: run date minus 2 days).",
+        )
+    },
     tags=["sar", "ingest"],
 )
 def scene_pipeline() -> None:
